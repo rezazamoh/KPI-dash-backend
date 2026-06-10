@@ -1,5 +1,4 @@
 from database.db import SessionLocal
-from database.db import SessionLocal
 
 from database.raw_models import (
     GerritChange
@@ -128,3 +127,16 @@ def get_all_gerrit_changes():
     db.close()
 
     return [c.raw_json for c in changes]
+
+def save_team_snapshot(metrics):
+
+    db = SessionLocal()
+
+    db.add(
+        TeamSnapshot(
+            metrics_json=metrics
+        )
+    )
+
+    db.commit()
+    db.close()
