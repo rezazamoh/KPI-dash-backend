@@ -45,5 +45,7 @@ class GerritClient:
             "--patch-sets",
             "--comments",
             "--all-reviewers",
+            "--submit-records",
+            "--current-patch-set",
             "--format", "JSON"
         ])

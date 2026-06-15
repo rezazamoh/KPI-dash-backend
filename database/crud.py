@@ -5,7 +5,8 @@ from database.raw_models import (
 )
 
 from database.kpi_models import (
-    DeveloperSnapshot
+    DeveloperSnapshot,
+    TeamSnapshot
 )
 
 

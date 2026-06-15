@@ -262,3 +262,82 @@ def complexity(changes):
         dev: round(mean(v), 2)
         for dev, v in stats.items()
     }
+
+def review_comment_graph(changes):
+
+    review_edges = defaultdict(int)
+    comment_edges = defaultdict(int)
+
+    for change in changes:
+
+        owner = (
+            change.get("owner", {})
+            .get("username")
+        )
+
+        if not owner:
+            continue
+
+        for reviewer in change.get(
+            "allReviewers",
+            []
+        ):
+
+            reviewer_name = reviewer.get(
+                "username"
+            )
+
+            if (
+                not reviewer_name
+                or reviewer_name == owner
+            ):
+                continue
+
+            review_edges[
+                (reviewer_name, owner)
+            ] += 1
+
+        for comment in change.get(
+            "comments",
+            []
+        ):
+
+            commenter = (
+                comment.get(
+                    "reviewer",
+                    {}
+                )
+                .get("username")
+            )
+
+            if (
+                not commenter
+                or commenter == owner
+            ):
+                continue
+
+            comment_edges[
+                (commenter, owner)
+            ] += 1
+
+    return {
+        "review_edges": [
+            {
+                "source": src,
+                "target": dst,
+                "count": count
+            }
+            for (src, dst), count
+            in review_edges.items()
+        ],
+
+        "comment_edges": [
+            {
+                "source": src,
+                "target": dst,
+                "count": count
+            }
+            for (src, dst), count
+            in comment_edges.items()
+        ]
+    }

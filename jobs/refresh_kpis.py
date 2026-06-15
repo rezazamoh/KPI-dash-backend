@@ -9,14 +9,15 @@ from kpis.gerrit_kpis import (
     changes_per_repo,
     lead_time,
     complexity,
+    review_comment_graph,
 )
 
-from database.crud import save_snapshot
+from database.crud import (save_snapshot , save_team_snapshot)
 from database.crud import get_all_gerrit_changes
 
 
 changes = get_all_gerrit_changes()
-
+print(changes[0].keys())
 developers = defaultdict(lambda: {
     "basic": {},
     "communication": {},
@@ -61,3 +62,10 @@ for username, metrics in developers.items():
         username=username,
         metrics=metrics
     )
+graph = review_comment_graph(
+    changes
+)
+
+save_team_snapshot(
+    graph
+)

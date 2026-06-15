@@ -25,7 +25,23 @@ class DeveloperSnapshot(Base):
 
     snapshot_time = Column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.now
+    )
+
+    metrics_json = Column(JSON)
+
+class TeamSnapshot(Base):
+
+    __tablename__ = "team_snapshots"
+
+    id = Column(
+        Integer,
+        primary_key=True
+    )
+
+    snapshot_time = Column(
+        DateTime,
+        default=datetime.now
     )
 
     metrics_json = Column(JSON)
