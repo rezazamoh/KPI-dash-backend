@@ -1,72 +1,51 @@
-## KPI-dash-backend
+# KPI-dash-backend
 
-# 1. Create & Activate Virtual Environment
+A FastAPI backend for Gerrit-based KPI reporting.
+
+## 1. Setup
+
+Create and activate a Python virtual environment:
 
 ```cmd
 python -m venv venv
-```
-
-```cmd
 venv\Scripts\activate
 ```
 
-Verify:
+Install project dependencies:
 
 ```cmd
-python --version
+pip install -r requirements.txt
 ```
 
----
+## 2. Configure Gerrit
 
-# 2. Install Dependencies
+Update `config.py` with your Gerrit SSH settings:
 
-```cmd
-pip install fastapi uvicorn sqlalchemy pydantic
+```python
+GERRIT_HOST = "your.gerrit.host"
+GERRIT_PORT = 29418
+GERRIT_USER = "your_user"
 ```
 
-(Optional, if you're using Gerrit/Jira APIs later)
+## 3. Initialize the database
 
-```cmd
-pip install requests
-```
-
-Generate requirements:
-
-```cmd
-pip freeze > requirements.txt
-```
-
----
-
-# 3. Initialize Database
-
-From project root:
+From the project root:
 
 ```cmd
 python -m database.init_db
 ```
 
-Expected:
+Expected output:
 
 ```text
 Database created
 ```
 
-This creates:
+This creates the SQLite database file used by the backend.
 
-```text
-metrics.db
-```
+## 4. Collect Gerrit changes
 
----
-
-# 4. Load Raw Gerrit Data
-
-If your export file is:
-
-```text
-data\gerrit.json
-```
+The system now loads Gerrit changes via SSH, not from a static JSON export.
 
 Run:
 
@@ -74,150 +53,141 @@ Run:
 python -m jobs.collect_raw
 ```
 
-Expected:
+This fetches changes from the last 30 days by default and stores them in the database.
 
-```text
-Loaded XXX changes
+To load a custom time window:
+
+```cmd
+python -m jobs.collect_raw 2025-01-01 2025-12-31
 ```
 
-Verify in DB:
+## 5. Refresh KPI snapshots
 
-```sql
-SELECT COUNT(*) FROM gerrit_changes;
-```
-
----
-
-# 5. Generate KPI Snapshots
-
-Run:
+Once raw data is in the database, generate KPI snapshots:
 
 ```cmd
 python -m jobs.refresh_kpis
 ```
 
-Expected:
+This writes developer KPI snapshots to the database for API consumption.
 
-```text
-Saved XXX developer snapshots
-```
+## 6. Run the API server
 
-Verify:
-
-```sql
-SELECT username, metrics_json
-FROM developer_snapshots
-LIMIT 5;
-```
-
----
-
-# 6. Start FastAPI
-
-From project root:
+Start FastAPI with Uvicorn:
 
 ```cmd
 uvicorn app:app --reload
 ```
 
-Expected:
-
-```text
-Uvicorn running on http://127.0.0.1:8000
-```
-
----
-
-# 7. Open API Docs
-
-Browser:
+Open API docs at:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-You should see your endpoints (whatever you've implemented so far, e.g. `/health`, `/developers`, `/developers/{username}`).
+## 7. Available API endpoints
 
----
+### Health
 
-# 8. Useful Development Commands
+- `GET /health`
 
-Recreate DB from scratch:
+### Developers
+
+- `GET /developers`
+  - Query params: `start_date`, `end_date`
+  - Defaults to full history when date filters are omitted
+
+- `GET /developers/{username}`
+
+- `GET /developers/performance/{username}`
+  - Query params:
+    - `repo` (project name)
+    - `topic`
+    - `start_date`
+    - `end_date`
+  - Default behavior is full history when dates are omitted
+
+### Projects
+
+- `GET /projects`
+  - Query params: `username`, `start_date`, `end_date`
+
+- `GET /projects/performance/{project:path}`
+  - Query params: `username`, `topic`, `start_date`, `end_date`
+
+### Team
+
+- `GET /team/graph`
+
+## 8. Notes
+
+- The `/projects/{repo}/topics` endpoint was removed for now.
+- Date filters are optional and must be provided together: both `start_date` and `end_date`, or neither.
+- `jobs.collect_raw` now uses `collectors/gerrit_ssh.py` to fetch Gerrit changes via SSH.
+
+## 9. Useful commands
+
+Recreate the database from scratch:
 
 ```cmd
 del metrics.db
 python -m database.init_db
 ```
 
-Reload raw data:
+Reload raw Gerrit data:
 
 ```cmd
 python -m jobs.collect_raw
 ```
 
-Recalculate KPIs:
+Recalculate KPI snapshots:
 
 ```cmd
 python -m jobs.refresh_kpis
 ```
 
-Start server:
+Start the server:
 
 ```cmd
 uvicorn app:app --reload
 ```
 
----
-
-# Expected Project Layout
+## 10. Current project layout
 
 ```text
 KPI-dash-backend/
-│
 ├── app.py
-│
 ├── api/
 │   ├── __init__.py
 │   ├── developers.py
 │   └── team.py
-│
+├── collectors/
+│   ├── __init__.py
+│   └── gerrit_ssh.py
 ├── database/
 │   ├── __init__.py
-│   ├── db.py
 │   ├── crud.py
-│   ├── raw_models.py
-│   ├── kpi_models.py
+│   ├── db.py
 │   ├── global_models.py
-│   └── init_db.py
-│
+│   ├── init_db.py
+│   ├── kpi_models.py
+│   └── raw_models.py
 ├── jobs/
 │   ├── __init__.py
 │   ├── collect_raw.py
 │   ├── refresh_kpis.py
-│   └── refresh_team_kpis.py
-│
+│   └── refresh_team_kpi.py
 ├── kpis/
 │   ├── __init__.py
 │   ├── gerrit_kpis.py
 │   └── team_kpis.py
-│
 ├── clients/
 │   ├── __init__.py
-│   └── file_loader.py
-│
-├── data/
-│   └── gerrit.json
-│
-├── metrics.db
-│
+│   ├── file_loader.py
+│   ├── gerrit.py
+│   ├── jenkins.py
+│   └── jira.py
+├── config.py
 ├── requirements.txt
-│
-└── venv/
+└── README.md
 ```
-
-Once all of that runs cleanly, the next backend milestone is:
-
-* `GET /developers`
-* `GET /developers/{username}`
-* `GET /team/graph`
-* Implementing the real `review_response_time` KPI from Gerrit reviewer activity data.

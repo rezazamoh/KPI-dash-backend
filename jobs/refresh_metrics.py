@@ -1,8 +1,7 @@
-from clients.file_loader import load_json
-from database.crud import save_metric
+from database.crud import get_all_gerrit_changes, save_metric
 from kpis.gerrit_kpis import *
 
-changes = load_json("data/gerrit.json")
+changes = get_all_gerrit_changes()
 
 for username, value in mean_patchsets(changes).items():
     save_metric(username, "mean_patchsets", value)

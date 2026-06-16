@@ -7,7 +7,7 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"message": "Dashboard Backend Running"}
+    return {"message": "Server is up and running. See /docs for API documentation."}
 
 
 @app.get("/health")
