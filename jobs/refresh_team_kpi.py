@@ -1,10 +1,10 @@
-from database.crud import get_all_gerrit_changes
+from database.crud import get_gerrit_changes
 from database.crud import save_team_snapshot
 
 from kpis.team_kpis import build_team_graph
 
 
-changes = get_all_gerrit_changes()
+changes = get_gerrit_changes()
 
 team_graph = build_team_graph(changes)
 

@@ -1,39 +1,73 @@
 import json
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import GERRIT_HOST, GERRIT_PORT, GERRIT_USER
 
 
-def fetch_changes(start_date, end_date):
+def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None):
     """
-    Fetch Gerrit changes via SSH query for a given date range.
+    Fetch Gerrit changes via SSH query with optional filtering parameters.
     
     Args:
-        start_date (str): Start date in format "YYYY-MM-DD" or Gerrit date format
-        end_date (str): End date in format "YYYY-MM-DD" or Gerrit date format
+        start_date (str|datetime, optional): Start date in YYYY-MM-DD format.
+        end_date (str|datetime, optional): End date in YYYY-MM-DD format.
+        owner (str, optional): Gerrit owner username filter.
+        project (str, optional): Gerrit project filter.
+        topic (str, optional): Gerrit topic filter.
     
     Returns:
         list: List of parsed change objects with raw JSON
     """
-    
+
+    def format_value(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d")
+        return str(value)
+
+    query_terms = []
+    formatted_start = format_value(start_date)
+    formatted_end = format_value(end_date)
+
+    if formatted_start:
+        query_terms.append(f'after:"{formatted_start}"')
+    if formatted_end:
+        query_terms.append(f'before:"{formatted_end}"')
+    if owner:
+        query_terms.append(f'owner:"{owner}"')
+    if project:
+        query_terms.append(f'project:"{project}"')
+    if topic:
+        query_terms.append(f'topic:"{topic}"')
+
+    if not query_terms:
+        fallback_end = datetime.now()
+        fallback_start = fallback_end - timedelta(days=30)
+        query_terms.extend([
+            f'after:"{fallback_start.strftime("%Y-%m-%d")}"',
+            f'before:"{fallback_end.strftime("%Y-%m-%d")}"',
+        ])
+
     cmd = [
-        "ssh",
-        "-p", str(GERRIT_PORT),
-        f"{GERRIT_USER}@{GERRIT_HOST}",
-        "gerrit",
-        "query",
-        f'after:"{start_date}"',
-        f'before:"{end_date}"',
-        "--format=JSON",
-        "--all-reviewers",
-        "--comments",
-        "--patch-sets",
-        "--current-patch-set",
-        "--submit-records"
+    "ssh",
+    "-p", str(GERRIT_PORT),
+    f"{GERRIT_USER}@{GERRIT_HOST}",
+    "gerrit",
+    *(["query", *query_terms] if query_terms else []),
+    "--format=JSON",
+    "--all-reviewers",
+    "--comments",
+    "--patch-sets",
+    "--current-patch-set",
+    "--submit-records",
     ]
 
     print(f"[DEBUG] Running SSH command to {GERRIT_HOST}:{GERRIT_PORT}")
-    print(f"[DEBUG] Query: after:{start_date} before:{end_date}")
+    if query_terms:
+        print(f"[DEBUG] Query terms: {' '.join(query_terms)}")
+    else:
+        print("[DEBUG] Query terms: <no filters>")
 
     try:
         result = subprocess.run(

@@ -1,267 +1,5 @@
-from collections import defaultdict, Counter
+from collections import defaultdict
 from statistics import mean
-
-
-def changes_per_repo(changes):
-
-    result = defaultdict(lambda: defaultdict(int))
-
-    for c in changes:
-
-        dev = c["owner"]["username"]
-        repo = c["project"]
-
-        result[dev][repo] += 1
-
-    return {
-        dev: dict(repos)
-        for dev, repos in result.items()
-    }
-
-
-def mean_patchsets(changes):
-
-    stats = defaultdict(list)
-
-    for c in changes:
-
-        dev = c["owner"]["username"]
-
-        stats[dev].append(
-            len(c.get("patchSets", []))
-        )
-
-    return {
-        dev: round(mean(v), 2)
-        for dev, v in stats.items()
-    }
-
-
-def comments_sent(changes):
-
-    counter = Counter()
-
-    for c in changes:
-
-        for cm in c.get("comments", []):
-
-            reviewer = cm.get("reviewer", {})
-            username = reviewer.get("username")
-
-            if username:
-                counter[username] += 1
-
-    return dict(counter)
-
-
-def comments_received(changes):
-
-    counter = Counter()
-
-    for c in changes:
-
-        owner = c["owner"]["username"]
-
-        counter[owner] += len(
-            c.get("comments", [])
-        )
-
-    return dict(counter)
-
-
-def review_requests_sent(changes):
-
-    counter = Counter()
-
-    for c in changes:
-
-        owner = c["owner"]["username"]
-
-        for reviewer in c.get(
-            "allReviewers",
-            []
-        ):
-
-            username = reviewer.get(
-                "username"
-            )
-
-            if (
-                username and
-                username != owner
-            ):
-                counter[owner] += 1
-
-    return dict(counter)
-
-
-def review_requests_received(changes):
-
-    counter = Counter()
-
-    for c in changes:
-
-        for reviewer in c.get(
-            "allReviewers",
-            []
-        ):
-
-            username = reviewer.get(
-                "username"
-            )
-
-            if username:
-                counter[username] += 1
-
-    return dict(counter)
-
-
-def review_graph(changes):
-
-    edges = Counter()
-
-    for c in changes:
-
-        author = c["owner"]["username"]
-
-        for reviewer in c.get(
-            "allReviewers",
-            []
-        ):
-
-            username = reviewer.get(
-                "username"
-            )
-
-            if (
-                username and
-                username != author
-            ):
-                edges[
-                    (username, author)
-                ] += 1
-
-    return dict(edges)
-
-
-def reviewer_response_time(changes):
-
-    stats = defaultdict(list)
-
-    for c in changes:
-
-        created = c["createdOn"]
-
-        first_seen = {}
-
-        for cm in c.get("comments", []):
-
-            reviewer = cm["reviewer"].get(
-                "username"
-            )
-
-            ts = cm["timestamp"]
-
-            if reviewer not in first_seen:
-                first_seen[reviewer] = ts
-
-        for reviewer, ts in first_seen.items():
-
-            hours = (
-                ts - created
-            ) / 3600
-
-            stats[reviewer].append(
-                hours
-            )
-
-    result = {}
-
-    for reviewer, values in stats.items():
-
-        result[reviewer] = {
-            "min": round(min(values), 2),
-            "mean": round(mean(values), 2),
-            "max": round(max(values), 2)
-        }
-
-    return result
-
-
-def lead_time(changes):
-
-    stats = defaultdict(list)
-
-    for c in changes:
-
-        hours = (
-            c["lastUpdated"] -
-            c["createdOn"]
-        ) / 3600
-
-        dev = c["owner"]["username"]
-
-        stats[dev].append(hours)
-
-    result = {}
-
-    for dev, values in stats.items():
-
-        result[dev] = {
-            "min": round(min(values), 2),
-            "mean": round(mean(values), 2),
-            "max": round(max(values), 2)
-        }
-
-    return result
-
-
-def complexity(changes):
-
-    stats = defaultdict(list)
-
-    for c in changes:
-
-        total_lines = 0
-
-        for ps in c.get(
-            "patchSets",
-            []
-        ):
-
-            total_lines += (
-                ps.get(
-                    "sizeInsertions",
-                    0
-                )
-                +
-                ps.get(
-                    "sizeDeletions",
-                    0
-                )
-            )
-
-        score = (
-            total_lines *
-            max(
-                len(
-                    c.get(
-                        "patchSets",
-                        []
-                    )
-                ),
-                1
-            )
-        )
-
-        dev = c["owner"]["username"]
-
-        stats[dev].append(score)
-
-    return {
-        dev: round(mean(v), 2)
-        for dev, v in stats.items()
-    }
 
 
 def _normalize_owner(change):
@@ -274,61 +12,216 @@ def _normalize_topic(change):
     return topic if topic else "untagged"
 
 
-def _aggregate_performance(records):
-    totals = {
-        "change_count": len(records),
-        "patchset_count": 0,
-        "lead_time_hours": [],
-        "complexity": [],
-        "total_comments": 0,
-        "reviewer_counts": [],
-        "status_counts": {}
-    }
+def _average_patchsets(changes):
+    if not changes:
+        return 0
+    return round(
+        mean(len(c.get("patchSets", [])) for c in changes),
+        2
+    )
 
-    for change in records:
-        totals["patchset_count"] += len(change.get("patchSets", []))
 
-        created = change.get("createdOn", 0)
-        updated = change.get("lastUpdated", created)
-        if created and updated:
-            totals["lead_time_hours"].append(
-                (updated - created) / 3600
-            )
+def _review_requests_sent_stats(changes):
+    stats = defaultdict(list)
 
-        complexity = 0
-        for ps in change.get("patchSets", []):
-            complexity += (
-                ps.get("sizeInsertions", 0)
-                + ps.get("sizeDeletions", 0)
-            )
-
-        totals["complexity"].append(complexity)
-        totals["total_comments"] += len(change.get("comments", []))
-
-        reviewer_count = 0
-        for reviewer in change.get("allReviewers", []):
-            if reviewer.get("username"):
-                reviewer_count += 1
-
-        totals["reviewer_counts"].append(reviewer_count)
-
-        status = change.get("status") or "unknown"
-        totals["status_counts"][status] = (
-            totals["status_counts"].get(status, 0) + 1
+    for change in changes:
+        owner = _normalize_owner(change)
+        count = sum(
+            1
+            for reviewer in change.get("allReviewers", [])
+            if reviewer.get("username") and reviewer.get("username") != owner
         )
-
-    average = lambda values: round(mean(values), 2) if values else 0
+        stats[owner].append(count)
 
     return {
-        "change_count": totals["change_count"],
-        "average_patchsets": round(
-            totals["patchset_count"] / totals["change_count"], 2
-        ) if totals["change_count"] else 0,
-        "average_lead_time_hours": average(totals["lead_time_hours"]),
-        "average_complexity": average(totals["complexity"]),
-        "total_comments": totals["total_comments"],
-        "average_reviewers_per_change": average(totals["reviewer_counts"]),
-        "status_counts": totals["status_counts"]
+        owner: {
+            "changes_count": len(counts),
+            "total_requests": sum(counts),
+            "min_requests_per_change": min(counts) if counts else 0,
+            "mean_requests_per_change": round(mean(counts), 2) if counts else 0,
+            "max_requests_per_change": max(counts) if counts else 0,
+        }
+        for owner, counts in stats.items()
+    }
+
+
+def _review_requests_received_stats(changes):
+    stats = defaultdict(lambda: defaultdict(int))
+
+    for change in changes:
+        for reviewer in change.get("allReviewers", []):
+            username = reviewer.get("username")
+            if username:
+                change_id = change.get("id") or change.get("change_number")
+                stats[username][change_id] += 1
+
+    return {
+        username: {
+            "changes_count": len(change_counts),
+            "total_requests": sum(change_counts.values()),
+            "min_requests_per_change": min(change_counts.values()) if change_counts else 0,
+            "mean_requests_per_change": round(mean(change_counts.values()), 2) if change_counts else 0,
+            "max_requests_per_change": max(change_counts.values()) if change_counts else 0,
+        }
+        for username, change_counts in stats.items()
+    }
+
+
+def _comments_sent_stats(changes):
+    stats = defaultdict(lambda: defaultdict(int))
+
+    for change in changes:
+        for comment in change.get("comments", []):
+            commenter = comment.get("reviewer", {}).get("username")
+            if commenter:
+                change_id = change.get("id") or change.get("change_number")
+                stats[commenter][change_id] += 1
+
+    return {
+        username: {
+            "changes_count": len(change_counts),
+            "total_comments": sum(change_counts.values()),
+            "min_comments_per_change": min(change_counts.values()) if change_counts else 0,
+            "mean_comments_per_change": round(mean(change_counts.values()), 2) if change_counts else 0,
+            "max_comments_per_change": max(change_counts.values()) if change_counts else 0,
+        }
+        for username, change_counts in stats.items()
+    }
+
+
+def _comments_received_stats(changes):
+    stats = defaultdict(list)
+
+    for change in changes:
+        owner = _normalize_owner(change)
+        stats[owner].append(len(change.get("comments", [])))
+
+    return {
+        owner: {
+            "changes_count": len(counts),
+            "total_comments": sum(counts),
+            "min_comments_per_change": min(counts) if counts else 0,
+            "mean_comments_per_change": round(mean(counts), 2) if counts else 0,
+            "max_comments_per_change": max(counts) if counts else 0,
+        }
+        for owner, counts in stats.items()
+    }
+
+
+def _reviewer_response_time(changes):
+    stats = defaultdict(list)
+
+    for change in changes:
+        created = change.get("createdOn")
+        if not created:
+            continue
+
+        first_seen = {}
+        for comment in change.get("comments", []):
+            reviewer = comment.get("reviewer", {}).get("username")
+            ts = comment.get("timestamp")
+            if not reviewer or ts is None:
+                continue
+            if reviewer not in first_seen:
+                first_seen[reviewer] = ts
+
+        for reviewer, ts in first_seen.items():
+            stats[reviewer].append((ts - created) / 3600)
+
+    return {
+        reviewer: {
+            "min_hours": round(min(hours), 2) if hours else 0,
+            "mean_hours": round(mean(hours), 2) if hours else 0,
+            "max_hours": round(max(hours), 2) if hours else 0,
+        }
+        for reviewer, hours in stats.items()
+    }
+
+
+def _lead_time_stats(changes):
+    stats = defaultdict(list)
+
+    for change in changes:
+        owner = _normalize_owner(change)
+        created = change.get("createdOn")
+        updated = change.get("lastUpdated")
+        if created and updated:
+            stats[owner].append((updated - created) / 3600)
+
+    return {
+        owner: {
+            "min_hours": round(min(hours), 2) if hours else 0,
+            "mean_hours": round(mean(hours), 2) if hours else 0,
+            "max_hours": round(max(hours), 2) if hours else 0,
+        }
+        for owner, hours in stats.items()
+    }
+
+
+def summarize_change_metrics(changes):
+    return {
+        "change_count": len(changes),
+        "average_patchsets": _average_patchsets(changes),
+        "review_requests_sent": _review_requests_sent_stats(changes),
+        "review_requests_received": _review_requests_received_stats(changes),
+        "comments_sent": _comments_sent_stats(changes),
+        "comments_received": _comments_received_stats(changes),
+        "reviewer_response_time": _reviewer_response_time(changes),
+        "lead_time": _lead_time_stats(changes),
+    }
+
+
+def developer_snapshot_metrics(changes, username):
+    """
+    Compute KPI snapshot for a single developer.
+    Used by both live mode and snapshot refresh jobs.
+    Ensures consistent metrics regardless of data source.
+    
+    Args:
+        changes: List of Gerrit changes (from live fetch or DB)
+        username: Developer username to filter by
+    
+    Returns:
+        dict: Metrics summary for this developer
+    """
+    # Filter changes by owner
+    dev_changes = [
+        c for c in changes
+        if _normalize_owner(c) == username
+    ]
+    
+    if not dev_changes:
+        return {
+            "change_count": 0,
+            "average_patchsets": 0,
+            "review_requests_sent": 0,
+            "review_requests_received": 0,
+            "comments_sent": 0,
+            "comments_received": 0,
+            "reviewer_response_time": {},
+            "lead_time": {},
+        }
+    
+    # Get full metrics for this developer's changes
+    full_metrics = summarize_change_metrics(dev_changes)
+    
+    # Extract only this developer's stats from the nested structures
+    review_sent = full_metrics.get("review_requests_sent", {}).get(username, {})
+    review_received = full_metrics.get("review_requests_received", {}).get(username, {})
+    comments_sent = full_metrics.get("comments_sent", {}).get(username, {})
+    comments_received = full_metrics.get("comments_received", {}).get(username, {})
+    response_time = full_metrics.get("reviewer_response_time", {}).get(username, {})
+    lead = full_metrics.get("lead_time", {}).get(username, {})
+    
+    return {
+        "change_count": full_metrics["change_count"],
+        "average_patchsets": full_metrics["average_patchsets"],
+        "review_requests_sent": review_sent,
+        "review_requests_received": review_received,
+        "comments_sent": comments_sent,
+        "comments_received": comments_received,
+        "reviewer_response_time": response_time,
+        "lead_time": lead,
     }
 
 
@@ -356,7 +249,7 @@ def developer_performance_by_repo(changes, username=None, repo=None, topic=None)
 
     return {
         project: {
-            owner: _aggregate_performance(changes_by_dev)
+            owner: summarize_change_metrics(changes_by_dev)
             for owner, changes_by_dev in owners.items()
         }
         for project, owners in result.items()
@@ -387,72 +280,10 @@ def developer_performance_by_topic(changes, username=None, topic=None, repo=None
 
     return {
         change_topic: {
-            owner: _aggregate_performance(changes_by_dev)
+            owner: summarize_change_metrics(changes_by_dev)
             for owner, changes_by_dev in owners.items()
         }
         for change_topic, owners in result.items()
-    }
-
-
-def developer_performance_by_developer_repo(changes, username=None, repo=None, topic=None):
-    """
-    Aggregate performance grouped by owner -> project.
-    Applies optional filters: username, repo, topic.
-    """
-    result = defaultdict(lambda: defaultdict(list))
-
-    for change in changes:
-        owner = _normalize_owner(change)
-        if username and owner != username:
-            continue
-
-        project = change.get("project") or "unknown"
-        if repo and project != repo:
-            continue
-
-        change_topic = _normalize_topic(change)
-        if topic and change_topic != topic:
-            continue
-
-        result[owner][project].append(change)
-
-    return {
-        owner: {
-            project: _aggregate_performance(changes_by_dev)
-            for project, changes_by_dev in projects.items()
-        }
-        for owner, projects in result.items()
-    }
-
-
-def developer_performance_by_developer_topic(changes, username=None, topic=None, repo=None):
-    """
-    Aggregate performance grouped by owner -> topic.
-    Applies optional filters: username, topic, repo.
-    """
-    result = defaultdict(lambda: defaultdict(list))
-
-    for change in changes:
-        owner = _normalize_owner(change)
-        if username and owner != username:
-            continue
-
-        project = change.get("project") or "unknown"
-        if repo and project != repo:
-            continue
-
-        change_topic = _normalize_topic(change)
-        if topic and change_topic != topic:
-            continue
-
-        result[owner][change_topic].append(change)
-
-    return {
-        owner: {
-            change_topic: _aggregate_performance(changes_by_dev)
-            for change_topic, changes_by_dev in topics.items()
-        }
-        for owner, topics in result.items()
     }
 
 

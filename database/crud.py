@@ -9,82 +9,6 @@ from database.kpi_models import (
     TeamSnapshot
 )
 
-
-def save_metric(username, metric_name, metric_value):
-
-    db = SessionLocal()
-
-    db.add(
-        DeveloperSnapshot(
-            username=username,
-            metric_name=metric_name,
-            metric_value=float(metric_value)
-        )
-    )
-
-    db.commit()
-    db.close()
-
-
-def get_developer_metrics(username):
-
-    db = SessionLocal()
-
-    rows = db.query(
-        DeveloperSnapshot
-    ).filter(
-        DeveloperSnapshot.username == username
-    ).all()
-
-    db.close()
-
-    return rows
-
-def get_latest_snapshot(username):
-
-    db = SessionLocal()
-
-    snapshot = (
-        db.query(DeveloperSnapshot)
-        .filter(
-            DeveloperSnapshot.username == username
-        )
-        .order_by(
-            DeveloperSnapshot.snapshot_time.desc()
-        )
-        .first()
-    )
-
-    db.close()
-
-    return snapshot
-
-def get_all_developers(start_date=None, end_date=None):
-    """
-    Get distinct Gerrit change owners.
-
-    Args:
-        start_date (datetime, optional): Filter by updated_at >= start_date.
-        end_date (datetime, optional): Filter by updated_at <= end_date.
-
-    Returns:
-        list: Developer usernames.
-    """
-
-    db = SessionLocal()
-
-    query = db.query(GerritChange.owner).distinct()
-    if start_date is not None:
-        query = query.filter(GerritChange.updated_at >= start_date)
-    if end_date is not None:
-        query = query.filter(GerritChange.updated_at <= end_date)
-
-    rows = query.all()
-
-    db.close()
-
-    return [r[0] for r in rows]
-
 def upsert_gerrit_change(change):
     """
     Upsert a Gerrit change into the database.
@@ -128,6 +52,54 @@ def upsert_gerrit_change(change):
     db.commit()
     db.close()
 
+def get_gerrit_changes(
+    start_date=None,
+    end_date=None,
+    owner=None,
+    project=None,
+    topic=None,
+):
+    """
+    Get Gerrit changes from the database with optional filters.
+
+    Args:
+        start_date (datetime, optional): Filter by updated_at >= start_date.
+        end_date (datetime, optional): Filter by updated_at <= end_date.
+        owner (str, optional): Filter by Gerrit owner username.
+        project (str, optional): Filter by Gerrit project.
+        topic (str, optional): Filter by Gerrit topic.
+
+    Returns:
+        list: List of raw_json objects for matching changes.
+    """
+
+    db = SessionLocal()
+    query = db.query(GerritChange)
+
+    if start_date is not None:
+        query = query.filter(GerritChange.updated_at >= start_date)
+    if end_date is not None:
+        query = query.filter(GerritChange.updated_at <= end_date)
+    if owner:
+        query = query.filter(GerritChange.owner == owner)
+    if project:
+        query = query.filter(GerritChange.project == project)
+
+    rows = query.all()
+    db.close()
+
+    results = []
+    for row in rows:
+        raw = row.raw_json
+        if topic:
+            if not isinstance(raw, dict):
+                continue
+            if (raw.get("topic") or "untagged") != topic:
+                continue
+        results.append(raw)
+
+    return results
+
 def save_snapshot(
     username,
     metrics
@@ -144,122 +116,6 @@ def save_snapshot(
 
     db.commit()
     db.close()
-
-def get_all_gerrit_changes():
-    """
-    Get all Gerrit changes from the database.
-    
-    Returns:
-        list: List of raw_json objects for each change
-    """
-
-    db = SessionLocal()
-
-    changes = db.query(GerritChange).all()
-
-    db.close()
-
-    return [c.raw_json for c in changes]
-
-
-def get_all_projects(username=None, start_date=None, end_date=None):
-    """
-    Get distinct Gerrit project names.
-    
-    Args:
-        username (str, optional): If provided, filter projects by owner username.
-        start_date (datetime, optional): Filter by updated_at >= start_date.
-        end_date (datetime, optional): Filter by updated_at <= end_date.
-    
-    Returns:
-        list: Project names
-    """
-
-    db = SessionLocal()
-
-    query = db.query(GerritChange.project).distinct()
-    if username:
-        query = query.filter(GerritChange.owner == username)
-    if start_date is not None:
-        query = query.filter(GerritChange.updated_at >= start_date)
-    if end_date is not None:
-        query = query.filter(GerritChange.updated_at <= end_date)
-
-    rows = query.all()
-
-    db.close()
-
-    return [r[0] for r in rows]
-
-
-def get_project_topics(repo, username=None, start_date=None, end_date=None):
-    """
-    Get distinct topics for a given project.
-
-    Args:
-        repo (str): Project name.
-        username (str, optional): Filter by owner username.
-        start_date (datetime, optional): Filter by updated_at >= start_date.
-        end_date (datetime, optional): Filter by updated_at <= end_date.
-
-    Returns:
-        list: Sorted list of topic names.
-    """
-
-    db = SessionLocal()
-
-    query = db.query(GerritChange.raw_json).filter(
-        GerritChange.project == repo
-    )
-
-    if username:
-        query = query.filter(GerritChange.owner == username)
-
-    if start_date is not None:
-        query = query.filter(GerritChange.updated_at >= start_date)
-
-    if end_date is not None:
-        query = query.filter(GerritChange.updated_at <= end_date)
-
-    rows = query.all()
-    db.close()
-
-    topics = set()
-    for row in rows:
-        raw = row[0] if isinstance(row, tuple) else row
-        topic = raw.get("topic") if isinstance(raw, dict) else None
-        topics.add(topic or "untagged")
-
-    return sorted(topics)
-
-def get_gerrit_changes_by_date(start_date, end_date, username=None):
-    """
-    Get Gerrit changes filtered by date range and optionally by owner username.
-    
-    Args:
-        start_date (datetime): Start date filter
-        end_date (datetime): End date filter
-        username (str, optional): Filter by owner username. Defaults to None.
-    
-    Returns:
-        list: List of raw_json objects for matching changes
-    """
-
-    db = SessionLocal()
-
-    query = db.query(GerritChange).filter(
-        GerritChange.updated_at >= start_date,
-        GerritChange.updated_at <= end_date
-    )
-
-    if username:
-        query = query.filter(GerritChange.owner == username)
-
-    changes = query.all()
-
-    db.close()
-
-    return [c.raw_json for c in changes]
 
 def save_team_snapshot(metrics):
 

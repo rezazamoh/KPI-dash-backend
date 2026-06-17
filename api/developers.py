@@ -1,77 +1,62 @@
 from datetime import datetime
-
 from fastapi import APIRouter, HTTPException, Query
-from database.crud import (
-    get_all_developers,
-    get_all_projects,
-    get_latest_snapshot,
-    get_all_gerrit_changes,
-    get_gerrit_changes_by_date,
-)
 from kpis.gerrit_kpis import (
     developer_performance_by_repo,
-    developer_performance_by_developer_repo,
     developer_performance_by_topic,
-    developer_performance_by_developer_topic,
+    developer_snapshot_metrics,
 )
+from api.utils import load_changes
 
 router = APIRouter()
-
-
-def _parse_date(value: str):
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid date format: {value}. Use YYYY-MM-DD or ISO format."
-        )
-
 
 @router.get("/developers")
 def developers(
     start_date: str | None = Query(None),
-    end_date: str | None = Query(None)
+    end_date: str | None = Query(None),
+    live: bool | None = Query(False)
 ):
-    if (start_date and not end_date) or (end_date and not start_date):
-        raise HTTPException(
-            status_code=400,
-            detail="Both start_date and end_date are required together."
-        )
+    changes = load_changes(
+        start_date=start_date,
+        end_date=end_date,
+        live=live
+    )
 
-    parsed_start = None
-    parsed_end = None
-    if start_date and end_date:
-        parsed_start = _parse_date(start_date)
-        parsed_end = _parse_date(end_date)
-
+    devs = sorted({
+            (c.get("owner") or {}).get("username")
+            for c in changes
+            if (c.get("owner") or {}).get("username")
+        })
+    
     return {
         "filters": {
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "live": live
         },
-        "developers": get_all_developers(
-            start_date=parsed_start,
-            end_date=parsed_end
-        )
+        "developers": devs
     }
-
 
 @router.get("/developers/{username}")
-def developer(username):
-    snapshot = get_latest_snapshot(username)
+def developer(
+    username: str,
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    live: bool | None = Query(False)
+):
 
-    if not snapshot:
-        return {
-            "error": "developer not found"
-        }
-
+    changes = load_changes(
+        username=username,
+        start_date=start_date,
+        end_date=end_date,
+        live=live
+    )
+    metrics = developer_snapshot_metrics(changes, username)
     return {
         "username": username,
-        "snapshot_time": snapshot.snapshot_time,
-        "metrics": snapshot.metrics_json
+        "snapshot_time": datetime.utcnow(),
+        "metrics": metrics,
+        "live": live
     }
-
 
 @router.get("/developers/performance/{username}")
 def developer_performance_by_username(
@@ -79,33 +64,26 @@ def developer_performance_by_username(
     repo: str | None = Query(None),
     topic: str | None = Query(None),
     start_date: str | None = Query(None),
-    end_date: str | None = Query(None)
+    end_date: str | None = Query(None),
+    live: bool | None = Query(False)
 ):
-    if (start_date and not end_date) or (end_date and not start_date):
-        raise HTTPException(
-            status_code=400,
-            detail="Both start_date and end_date are required together."
-        )
+    changes = load_changes(
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+        username=username,
+        project=repo,
+        topic=topic,
+    )
 
-    if start_date and end_date:
-        parsed_start = _parse_date(start_date)
-        parsed_end = _parse_date(end_date)
-        changes = get_gerrit_changes_by_date(
-            parsed_start,
-            parsed_end,
-            username=username
-        )
-    else:
-        changes = get_all_gerrit_changes()
-
-    repo_performance = developer_performance_by_developer_repo(
+    repo_performance = developer_performance_by_repo(
         changes,
         username=username,
         repo=repo,
         topic=topic
     )
 
-    topic_performance = developer_performance_by_developer_topic(
+    topic_performance = developer_performance_by_topic(
         changes,
         username=username,
         topic=topic,
@@ -118,44 +96,34 @@ def developer_performance_by_username(
             "repo": repo,
             "topic": topic,
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "live": live
         },
         "repo_performance": repo_performance,
         "topic_performance": topic_performance
     }
 
-
 @router.get("/projects")
 def projects(
-    username: str | None = Query(None),
     start_date: str | None = Query(None),
-    end_date: str | None = Query(None)
+    end_date: str | None = Query(None),
+    live: bool | None = Query(False)
 ):
-    if (start_date and not end_date) or (end_date and not start_date):
-        raise HTTPException(
-            status_code=400,
-            detail="Both start_date and end_date are required together."
-        )
-
-    parsed_start = None
-    parsed_end = None
-    if start_date and end_date:
-        parsed_start = _parse_date(start_date)
-        parsed_end = _parse_date(end_date)
-
+    
+    changes = load_changes(
+        start_date=start_date,
+        end_date=end_date,
+        live=live
+    )
+    projects = sorted({c.get("project") for c in changes if c.get("project")})
     return {
         "filters": {
-            "username": username,
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "live": live
         },
-        "projects": get_all_projects(
-            username=username,
-            start_date=parsed_start,
-            end_date=parsed_end
-        )
+        "projects": projects
     }
-
 
 @router.get("/projects/performance/{project:path}")
 def project_performance_for(
@@ -163,24 +131,17 @@ def project_performance_for(
     username: str | None = Query(None),
     topic: str | None = Query(None),
     start_date: str | None = Query(None),
-    end_date: str | None = Query(None)
+    end_date: str | None = Query(None),
+    live: bool | None = Query(False)
 ):
-    if (start_date and not end_date) or (end_date and not start_date):
-        raise HTTPException(
-            status_code=400,
-            detail="Both start_date and end_date are required together."
-        )
-
-    if start_date and end_date:
-        parsed_start = _parse_date(start_date)
-        parsed_end = _parse_date(end_date)
-        changes = get_gerrit_changes_by_date(
-            parsed_start,
-            parsed_end,
-            username=username
-        )
-    else:
-        changes = get_all_gerrit_changes()
+    changes = load_changes(
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+        username=username,
+        project=project,
+        topic=topic,
+    )
 
     repo_performance = developer_performance_by_repo(
         changes,

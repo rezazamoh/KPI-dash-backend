@@ -113,7 +113,7 @@ http://127.0.0.1:8000/docs
   - Query params: `username`, `start_date`, `end_date`
 
 - `GET /projects/performance/{project:path}`
-  - Query params: `username`, `topic`, `start_date`, `end_date`
+  - Query params: `username`, `topic`, `start_date`, `end_date`, `live`
 
 ### Team
 
