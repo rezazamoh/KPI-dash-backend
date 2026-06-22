@@ -36,6 +36,8 @@ def load_changes(
     username: str | None = None,
     project: str | None = None,
     topic: str | None = None,
+    reviewer: str | None = None,
+    options: list | None = None,
 ):
     parsed_start, parsed_end = parse_date_range(start_date, end_date)
 
@@ -44,8 +46,10 @@ def load_changes(
             start_date=parsed_start,
             end_date=parsed_end,
             owner=username,
+            reviewer=reviewer,
             project=project,
             topic=topic,
+            options=options,
         )
 
     return get_gerrit_changes(
