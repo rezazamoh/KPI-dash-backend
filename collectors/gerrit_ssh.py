@@ -4,7 +4,16 @@ from datetime import datetime, timedelta
 from config import GERRIT_HOST, GERRIT_PORT, GERRIT_USER
 
 
-def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None):
+DEFAULT_options = [
+    "--all-reviewers",
+    "--comments",
+    "--patch-sets",
+    "--current-patch-set",
+    "--submit-records",
+]
+
+
+def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
@@ -36,6 +45,8 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         query_terms.append(f'before:"{formatted_end}"')
     if owner:
         query_terms.append(f'owner:"{owner}"')
+    if reviewer:
+        query_terms.append(f'reviewer:"{reviewer}"')
     if project:
         query_terms.append(f'project:"{project}"')
     if topic:
@@ -43,27 +54,26 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
 
     if not query_terms:
         fallback_end = datetime.now()
-        fallback_start = fallback_end - timedelta(days=30)
+        fallback_start = fallback_end - timedelta(days=365)
         query_terms.extend([
             f'after:"{fallback_start.strftime("%Y-%m-%d")}"',
             f'before:"{fallback_end.strftime("%Y-%m-%d")}"',
         ])
 
-    cmd = [
-    "ssh",
-    "-p", str(GERRIT_PORT),
-    f"{GERRIT_USER}@{GERRIT_HOST}",
-    "gerrit",
-    "query", 
-    *query_terms,
-    "--format=JSON",
-    "--all-reviewers",
-    "--comments",
-    "--patch-sets",
-    "--current-patch-set",
-    "--submit-records",
-    ]
+    if options is None:
+        options = DEFAULT_options
 
+    cmd = [
+        "ssh",
+        "-p", str(GERRIT_PORT),
+        f"{GERRIT_USER}@{GERRIT_HOST}",
+        "gerrit",
+        "query",
+        *query_terms,
+        "--format=JSON",
+        *options,
+    ]
+    print(cmd)
     print(f"[DEBUG] Running SSH command to {GERRIT_HOST}:{GERRIT_PORT}")
     if query_terms:
         print(f"[DEBUG] Query terms: {' '.join(query_terms)}")
@@ -147,8 +157,16 @@ def _parse_change(obj):
         "status": obj.get("status"),
         "created_at": created_at,
         "updated_at": updated_at,
+        # Expose raw Gerrit fields at top level for metrics functions
+        "createdOn": obj.get("createdOn"),
+        "lastUpdated": obj.get("lastUpdated"),
+        "submitted": obj.get("submitted"),
+        "allReviewers": obj.get("allReviewers", []),
+        "comments": obj.get("comments", []),
+        "patchSets": obj.get("patchSets", []),
+        "currentPatchSet": obj.get("currentPatchSet"),
         # Keep full raw JSON for analysis
-        "raw_json": obj
+        "raw_json": obj,
     }
     
     return change

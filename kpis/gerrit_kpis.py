@@ -108,33 +108,66 @@ def _comments_received_stats(changes):
     }
 
 
-def _reviewer_response_time(changes):
-    stats = defaultdict(list)
+def _reviewer_added_ts(change, username):
+    """Get the timestamp when `username` was added as a reviewer on a change."""
+    sources = []
+    cps = change.get("currentPatchSet")
+    if cps and isinstance(cps, dict):
+        sources.append(cps)
+    for ps in change.get("patchSets", []):
+        if isinstance(ps, dict):
+            sources.append(ps)
+
+    earliest = None
+    for source in sources:
+        for approval in source.get("approvals", []):
+            by = approval.get("by", {})
+            if isinstance(by, dict) and by.get("username") == username:
+                ts = approval.get("grantedOn")
+                if ts is not None:
+                    if earliest is None or ts < earliest:
+                        earliest = ts
+    return earliest
+
+
+def reviewer_response_time(changes, username):
+    """
+    Calculate how long it takes `username` to respond when added as a reviewer.
+    Uses the first comment timestamp minus the timestamp when they were added
+    as a reviewer (from approval entries). Returns min/mean/max hours.
+
+    Args:
+        changes: List of changes where `username` was a reviewer
+        username: Developer username
+
+    Returns:
+        dict with min_hours, mean_hours, max_hours
+    """
+    hours = []
 
     for change in changes:
-        created = change.get("createdOn")
-        if not created:
+        added_ts = _reviewer_added_ts(change, username)
+        if added_ts is None:
             continue
 
-        first_seen = {}
+        first_comment_ts = None
         for comment in change.get("comments", []):
             reviewer = comment.get("reviewer", {}).get("username")
             ts = comment.get("timestamp")
-            if not reviewer or ts is None:
-                continue
-            if reviewer not in first_seen:
-                first_seen[reviewer] = ts
+            if reviewer == username and ts is not None:
+                if first_comment_ts is None or ts < first_comment_ts:
+                    first_comment_ts = ts
 
-        for reviewer, ts in first_seen.items():
-            stats[reviewer].append((ts - created) / 3600)
+        if first_comment_ts is not None and first_comment_ts > added_ts:
+            hours.append((first_comment_ts - added_ts) / 3600)
+
+    if not hours:
+        return {"min_hours": 0, "mean_hours": 0, "max_hours": 0}
 
     return {
-        reviewer: {
-            "min_hours": round(min(hours), 2) if hours else 0,
-            "mean_hours": round(mean(hours), 2) if hours else 0,
-            "max_hours": round(max(hours), 2) if hours else 0,
-        }
-        for reviewer, hours in stats.items()
+        "min_hours": round(min(hours), 2),
+        "mean_hours": round(mean(hours), 2),
+        "max_hours": round(max(hours), 2),
     }
 
 
@@ -144,9 +177,11 @@ def _lead_time_stats(changes):
     for change in changes:
         owner = _normalize_owner(change)
         created = change.get("createdOn")
+        submitted = change.get("submitted")
         updated = change.get("lastUpdated")
-        if created and updated:
-            stats[owner].append((updated - created) / 3600)
+        end_ts = submitted or updated
+        if created and end_ts:
+            stats[owner].append((end_ts - created) / 3600)
 
     return {
         owner: {
@@ -166,20 +201,41 @@ def summarize_change_metrics(changes):
         "review_requests_received": _review_requests_received_stats(changes),
         "comments_sent": _comments_sent_stats(changes),
         "comments_received": _comments_received_stats(changes),
-        "reviewer_response_time": _reviewer_response_time(changes),
         "lead_time": _lead_time_stats(changes),
     }
 
 
-def developer_snapshot_metrics(changes, username):
+def _changes_by_status_per_repo(changes):
+    """
+    Group changes by status -> repo, returning a count per repo per status.
+    
+    Args:
+        changes: List of Gerrit change dicts
+    
+    Returns:
+        dict: { status: { repo: count } }
+    """
+    result = defaultdict(lambda: defaultdict(int))
+    for c in changes:
+        status = c.get("status", "UNKNOWN")
+        repo = c.get("project", "unknown")
+        result[status][repo] += 1
+    return {
+        status: dict(repos)
+        for status, repos in result.items()
+    }
+
+
+def developer_snapshot_metrics(changes, username, reviewer_changes=None):
     """
     Compute KPI snapshot for a single developer.
     Used by both live mode and snapshot refresh jobs.
     Ensures consistent metrics regardless of data source.
     
     Args:
-        changes: List of Gerrit changes (from live fetch or DB)
+        changes: List of Gerrit changes where user is owner (from live fetch or DB)
         username: Developer username to filter by
+        reviewer_changes: List of changes where user is a reviewer (for response time)
     
     Returns:
         dict: Metrics summary for this developer
@@ -191,16 +247,20 @@ def developer_snapshot_metrics(changes, username):
     ]
     
     if not dev_changes:
-        return {
+        empty = {
             "change_count": 0,
             "average_patchsets": 0,
             "review_requests_sent": 0,
             "review_requests_received": 0,
             "comments_sent": 0,
             "comments_received": 0,
-            "reviewer_response_time": {},
             "lead_time": {},
+            "reviewer_response_time": {"min_hours": 0, "mean_hours": 0, "max_hours": 0},
+            "changes_by_status_per_repo": {},
         }
+        if reviewer_changes:
+            empty["reviewer_response_time"] = reviewer_response_time(reviewer_changes, username)
+        return empty
     
     # Get full metrics for this developer's changes
     full_metrics = summarize_change_metrics(dev_changes)
@@ -210,8 +270,15 @@ def developer_snapshot_metrics(changes, username):
     review_received = full_metrics.get("review_requests_received", {}).get(username, {})
     comments_sent = full_metrics.get("comments_sent", {}).get(username, {})
     comments_received = full_metrics.get("comments_received", {}).get(username, {})
-    response_time = full_metrics.get("reviewer_response_time", {}).get(username, {})
     lead = full_metrics.get("lead_time", {}).get(username, {})
+    
+    # Compute reviewer response time from reviewer changes
+    resp_time = {"min_hours": 0, "mean_hours": 0, "max_hours": 0}
+    if reviewer_changes:
+        resp_time = reviewer_response_time(reviewer_changes, username)
+    
+    # Changes grouped by status and repo
+    changes_per_status_repo = _changes_by_status_per_repo(dev_changes)
     
     return {
         "change_count": full_metrics["change_count"],
@@ -220,8 +287,9 @@ def developer_snapshot_metrics(changes, username):
         "review_requests_received": review_received,
         "comments_sent": comments_sent,
         "comments_received": comments_received,
-        "reviewer_response_time": response_time,
         "lead_time": lead,
+        "reviewer_response_time": resp_time,
+        "changes_by_status_per_repo": changes_per_status_repo,
     }
 
 
