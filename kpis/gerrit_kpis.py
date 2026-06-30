@@ -35,7 +35,7 @@ def _review_requests_sent_stats(changes):
 
     return {
         owner: {
-            "changes_count": len(counts),
+            #"changes_count": len(counts),
             "total_requests": sum(counts),
             "min_requests_per_change": min(counts) if counts else 0,
             "mean_requests_per_change": round(mean(counts), 2) if counts else 0,
@@ -57,7 +57,7 @@ def _review_requests_received_stats(changes):
 
     return {
         username: {
-            "changes_count": len(change_counts),
+            #"changes_count": len(change_counts),
             "total_requests": sum(change_counts.values()),
             "min_requests_per_change": min(change_counts.values()) if change_counts else 0,
             "mean_requests_per_change": round(mean(change_counts.values()), 2) if change_counts else 0,
@@ -193,6 +193,97 @@ def _lead_time_stats(changes):
     }
 
 
+def build_failure_rate(changes):
+    """
+    Calculate build & test pipeline failure rate from Jenkins comments
+    on Gerrit changes.
+
+    Scans each change's comments for Jenkins reviewer entries and parses
+    the vote labels (e.g. Verified+1, Build-1, Test-1) from the first
+    line of each comment to determine build/test outcomes.
+
+    This function is generic and works on any set of changes (filtered
+    by developer, project, topic, etc.) so it can be reused across
+    different API contexts.
+
+    Args:
+        changes: List of Gerrit change dicts (must include 'comments')
+
+    Returns:
+        dict with aggregate build failure statistics and per-label
+        breakdown
+    """
+    import re
+    pattern = re.compile(r'Patch Set \d+:\s*(\w+)([+-]\d+)\s*$')
+
+    total_outcomes = 0
+    failed_outcomes = 0
+    changes_with_builds = 0
+    changes_with_failures = 0
+    by_label = {}
+
+    for change in changes:
+        change_has_build = False
+        change_has_failure = False
+
+        for comment in change.get("comments", []):
+            if comment.get("reviewer", {}).get("username") != "jenkins":
+                continue
+
+            first_line = comment.get("message", "").split("\n")[0].strip()
+            match = pattern.match(first_line)
+            if not match:
+                continue
+
+            label = match.group(1)
+            vote = match.group(2)
+
+            if vote == "+1":
+                total_outcomes += 1
+                change_has_build = True
+            elif vote == "-1":
+                total_outcomes += 1
+                failed_outcomes += 1
+                change_has_build = True
+                change_has_failure = True
+            else:
+                continue
+
+            if label not in by_label:
+                by_label[label] = {"total": 0, "failed": 0}
+            by_label[label]["total"] += 1
+            if vote == "-1":
+                by_label[label]["failed"] += 1
+
+        if change_has_build:
+            changes_with_builds += 1
+        if change_has_failure:
+            changes_with_failures += 1
+
+    return {
+        "total_changes_with_builds": changes_with_builds,
+        "total_outcomes": total_outcomes,
+        "failed_outcomes": failed_outcomes,
+        "overall_failure_rate": round(
+            failed_outcomes / total_outcomes * 100, 2
+        ) if total_outcomes else 0,
+        "changes_with_failures": changes_with_failures,
+        "changes_failure_rate": round(
+            changes_with_failures / changes_with_builds * 100, 2
+        ) if changes_with_builds else 0,
+        "by_label": {
+            label: {
+                "total": stats["total"],
+                "failed": stats["failed"],
+                "failure_rate": round(
+                    stats["failed"] / stats["total"] * 100, 2
+                ) if stats["total"] else 0,
+            }
+            for label, stats in by_label.items()
+        },
+    }
+
+
 def summarize_change_metrics(changes):
     return {
         "change_count": len(changes),
@@ -202,6 +293,7 @@ def summarize_change_metrics(changes):
         "comments_sent": _comments_sent_stats(changes),
         "comments_received": _comments_received_stats(changes),
         "lead_time": _lead_time_stats(changes),
+        "build_failure_rate": build_failure_rate(changes),
     }
 
 
@@ -257,6 +349,7 @@ def developer_snapshot_metrics(changes, username, reviewer_changes=None):
             "lead_time": {},
             "reviewer_response_time": {"min_hours": 0, "mean_hours": 0, "max_hours": 0},
             "changes_by_status_per_repo": {},
+            "build_failure_rate": build_failure_rate([]),
         }
         if reviewer_changes:
             empty["reviewer_response_time"] = reviewer_response_time(reviewer_changes, username)
@@ -290,6 +383,7 @@ def developer_snapshot_metrics(changes, username, reviewer_changes=None):
         "lead_time": lead,
         "reviewer_response_time": resp_time,
         "changes_by_status_per_repo": changes_per_status_repo,
+        "build_failure_rate": full_metrics["build_failure_rate"],
     }
 
 
