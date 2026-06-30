@@ -20,7 +20,6 @@ def team_graph(
             start_date=start_date,
             end_date=end_date,
             live=True,
-            options=["--all-reviewers", "--comments"],
         )
         return review_comment_graph(changes)
 

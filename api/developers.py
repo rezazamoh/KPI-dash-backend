@@ -18,8 +18,7 @@ def developers(
     changes = load_changes(
         start_date=start_date,
         end_date=end_date,
-        live=live,
-        options=[],
+        live=live
     )
 
     devs = sorted({
@@ -45,20 +44,13 @@ def developer(
     live: bool | None = Query(False)
 ):
 
-    owner_changes = load_changes(
+    changes = load_changes(
         username=username,
         start_date=start_date,
         end_date=end_date,
         live=live
     )
-    reviewer_changes = load_changes(
-        reviewer=username,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=["--all-reviewers", "--comments", "--current-patch-set"],
-    )
-    metrics = developer_snapshot_metrics(owner_changes, username, reviewer_changes=reviewer_changes)
+    metrics = developer_snapshot_metrics(changes, username)
     return {
         "username": username,
         "snapshot_time": datetime.utcnow(),
@@ -121,8 +113,7 @@ def projects(
     changes = load_changes(
         start_date=start_date,
         end_date=end_date,
-        live=live,
-        options=[],
+        live=live
     )
     projects = sorted({c.get("project") for c in changes if c.get("project")})
     return {

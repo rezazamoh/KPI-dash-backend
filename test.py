@@ -1,13 +1,12 @@
-from api.utils import load_changes
-from kpis.gerrit_kpis import _reviewer_added_ts
+# debug_topics.py
+from database.db import SessionLocal
+from database.raw_models import GerritChange
 
-changes = load_changes(live=True,start_date=None,end_date=None,reviewer='a.amani')
-for c in changes[:5]:
-    added = _reviewer_added_ts(c, 'a.amani')
-    first_comment = None
-    for cm in c.get('comments', []):
-        if cm.get('reviewer',{}).get('username') == 'a.amani':
-            ts = cm.get('timestamp')
-            if first_comment is None or ts < first_comment:
-                first_comment = ts
-    print(f'change={c.get("number")}: added_ts={added}, first_comment_ts={first_comment}, ok={first_comment and added and first_comment > added}')
+repo = "silicon/dwdm/DIGI_G4_100GX_Firmware"   # replace exactly with a value from /projects
+db = SessionLocal()
+rows = db.query(GerritChange).filter(GerritChange.project == repo).limit(20).all()
+#print("rows found:", len(rows))
+for r in rows[:10]:
+    raw = r.raw_json
+    print("id:", r.change_id, "topic:", raw.get("topic"))
+db.close()
