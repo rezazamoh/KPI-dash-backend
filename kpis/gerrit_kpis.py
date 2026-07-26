@@ -35,10 +35,37 @@ def _people_stats(counter, change_counts):
         },
     }
 
+def _normalize_owner(change):
+    owner = change.get("owner")
+
+    if isinstance(owner, dict):
+        return owner.get("username") or owner.get("name")
+    
+    return owner
+
 def _normalize_topic(change):
     topic = change.get("topic")
     return topic if topic else "untagged"
 
+def _changes_by_status_per_repo(changes):
+    """
+    Group changes by status -> repo, returning a count per repo per status.
+    
+    Args:
+        changes: List of Gerrit change dicts
+    
+    Returns:
+        dict: { status: { repo: count } }
+    """
+    result = defaultdict(lambda: defaultdict(int))
+    for c in changes:
+        status = c.get("status", "UNKNOWN")
+        repo = c.get("project", "unknown")
+        result[status][repo] += 1
+    return {
+        status: dict(repos)
+        for status, repos in result.items()
+    }
 
 def _average_patchsets(changes):
     if not changes:
@@ -47,7 +74,6 @@ def _average_patchsets(changes):
         mean(len(c.get("patchSets", [])) for c in changes),
         2
     )
-
 
 def _review_requests_received(dev_changes):
     change_review_counts = []
@@ -113,9 +139,8 @@ def _comments_received(dev_changes):
     return _people_stats(commenters,change_comment_counts)
 
 def _comments_sent(commenter_changes, developer):
-
+    commenter_changes = commenter_changes or []
     owners = defaultdict(int)
-
     for change in commenter_changes:
 
         owner = change["owner"]["username"]
@@ -159,7 +184,6 @@ def _reviewer_added_ts(change, username):
                     if earliest is None or ts < earliest:
                         earliest = ts
     return earliest
-
 
 def reviewer_response_time(changes, username):
     """
@@ -321,7 +345,6 @@ def build_failure_rate(changes):
         },
     }
 
-
 def summarize_change_metrics(developer, dev_changes, reviewer_changes, commenter_changes):
     return {
         "change_count": len(dev_changes),
@@ -333,28 +356,6 @@ def summarize_change_metrics(developer, dev_changes, reviewer_changes, commenter
         "lead_time": _lead_time(dev_changes),
         "build_failure_rate": build_failure_rate(dev_changes),
     }
-
-
-def _changes_by_status_per_repo(changes):
-    """
-    Group changes by status -> repo, returning a count per repo per status.
-    
-    Args:
-        changes: List of Gerrit change dicts
-    
-    Returns:
-        dict: { status: { repo: count } }
-    """
-    result = defaultdict(lambda: defaultdict(int))
-    for c in changes:
-        status = c.get("status", "UNKNOWN")
-        repo = c.get("project", "unknown")
-        result[status][repo] += 1
-    return {
-        status: dict(repos)
-        for status, repos in result.items()
-    }
-
 
 def developer_snapshot_metrics(username, dev_changes=None, reviewer_changes=None, commenter_changes=None):
     """
@@ -400,67 +401,117 @@ def developer_snapshot_metrics(username, dev_changes=None, reviewer_changes=None
         "build_failure_rate": full_metrics["build_failure_rate"],
     }
 
-def developer_performance_by_repo(changes, username=None, repo=None, topic=None):
-    """
-    Aggregate performance grouped by project -> owner.
-    Applies optional filters: username, repo, topic.
-    """
-    result = defaultdict(lambda: defaultdict(list))
+def developer_performance_grouped(
+    username,
+    dev_changes,
+    reviewer_changes,
+    commenter_changes,
+    group_by,
+):
+
+    if group_by == "project":
+        key_func = lambda c: c.get("project") or "unknown"
+    elif group_by == "topic":
+        key_func = _normalize_topic
+    else:
+        raise ValueError(f"Unknown group: {group_by}")
+
+    grouped = defaultdict(list)
+    for change in dev_changes:
+        grouped[key_func(change)].append(change)
+
+    result = {}
+
+    for group_name, group_dev_changes in grouped.items():
+
+        group_reviewer_changes = [
+            c
+            for c in reviewer_changes
+            if key_func(c) == group_name
+        ]
+
+        group_commenter_changes = [
+            c
+            for c in commenter_changes
+            if key_func(c) == group_name
+        ]
+
+        result[group_name] = developer_snapshot_metrics(
+            username=username,
+            dev_changes=group_dev_changes,
+            reviewer_changes=group_reviewer_changes,
+            commenter_changes=group_commenter_changes,
+        )
+
+    return result
+
+def project_developer_metrics(changes):
+
+    developers = sorted({
+
+        _normalize_owner(change)
+
+        for change in changes
+
+        if _normalize_owner(change)
+
+    })
+
+    result = {}
+
+    for username in developers:
+
+        (
+            dev_changes,
+            reviewer_changes,
+            commenter_changes,
+        ) = split_changes_for_developer(
+            changes,
+            username,
+        )
+
+        result[username] = developer_snapshot_metrics(
+            username,
+            dev_changes,
+            reviewer_changes,
+            commenter_changes,
+        )
+
+    return result
+
+def split_changes_for_developer(changes, username):
+
+    dev_changes = []
+    reviewer_changes = []
+    commenter_changes = []
 
     for change in changes:
-        if username and _normalize_owner(change) != username:
-            continue
-
-        project = change.get("project") or "unknown"
-        if repo and project != repo:
-            continue
-
-        change_topic = _normalize_topic(change)
-        if topic and change_topic != topic:
-            continue
 
         owner = _normalize_owner(change)
-        result[project][owner].append(change)
 
-    return {
-        project: {
-            owner: summarize_change_metrics(changes_by_dev)
-            for owner, changes_by_dev in owners.items()
+        if owner == username:
+            dev_changes.append(change)
+
+        reviewers = {
+            reviewer.get("username")
+            for reviewer in change.get("allReviewers", [])
+            if reviewer.get("username")
         }
-        for project, owners in result.items()
-    }
 
+        if username in reviewers:
+            reviewer_changes.append(change)
 
-def developer_performance_by_topic(changes, username=None, topic=None, repo=None):
-    """
-    Aggregate performance grouped by topic -> owner.
-    Applies optional filters: username, topic, repo.
-    """
-    result = defaultdict(lambda: defaultdict(list))
+        if any(
+            comment.get("reviewer", {}).get("username") == username
+            for comment in change.get("comments", [])
+        ):
+            commenter_changes.append(change)
 
-    for change in changes:
-        if username and _normalize_owner(change) != username:
-            continue
-
-        project = change.get("project") or "unknown"
-        if repo and project != repo:
-            continue
-
-        change_topic = _normalize_topic(change)
-        if topic and change_topic != topic:
-            continue
-
-        owner = _normalize_owner(change)
-        result[change_topic][owner].append(change)
-
-    return {
-        change_topic: {
-            owner: summarize_change_metrics(changes_by_dev)
-            for owner, changes_by_dev in owners.items()
-        }
-        for change_topic, owners in result.items()
-    }
-
+    return (
+        dev_changes,
+        reviewer_changes,
+        commenter_changes,
+    )
 
 def review_comment_graph(changes):
 

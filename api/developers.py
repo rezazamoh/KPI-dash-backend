@@ -1,9 +1,9 @@
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from kpis.gerrit_kpis import (
-    developer_performance_by_repo,
-    developer_performance_by_topic,
+    developer_performance_grouped,
     developer_snapshot_metrics,
+    project_developer_metrics,
 )
 from api.utils import load_changes
 
@@ -83,42 +83,62 @@ def developer_performance_by_username(
     topic: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool | None = Query(False)
+    live: bool = Query(False),
 ):
-    changes = load_changes(
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
+
+    dev_changes = load_changes(
         username=username,
         project=repo,
         topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
     )
 
-    repo_performance = developer_performance_by_repo(
-        changes,
-        username=username,
-        repo=repo,
-        topic=topic
-    )
-
-    topic_performance = developer_performance_by_topic(
-        changes,
-        username=username,
+    reviewer_changes = load_changes(
+        reviewer=username,
+        project=repo,
         topic=topic,
-        repo=repo
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+    )
+
+    commenter_changes = load_changes(
+        commenter=username,
+        project=repo,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
     )
 
     return {
+
         "filters": {
             "username": username,
             "repo": repo,
             "topic": topic,
             "start_date": start_date,
             "end_date": end_date,
-            "live": live
+            "live": live,
         },
-        "repo_performance": repo_performance,
-        "topic_performance": topic_performance
+
+        "repo_performance": developer_performance_grouped(
+            username,
+            dev_changes,
+            reviewer_changes,
+            commenter_changes,
+            group_by="project",
+        ),
+
+        "topic_performance": developer_performance_grouped(
+            username,
+            dev_changes,
+            reviewer_changes,
+            commenter_changes,
+            group_by="topic",
+        ),
     }
 
 @router.get("/projects")
@@ -147,43 +167,27 @@ def projects(
 @router.get("/projects/performance/{project:path}")
 def project_performance_for(
     project: str,
-    username: str | None = Query(None),
     topic: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool | None = Query(False)
+    live: bool = Query(False),
 ):
+
     changes = load_changes(
+        project=project,
+        topic=topic,
         start_date=start_date,
         end_date=end_date,
         live=live,
-        username=username,
-        project=project,
-        topic=topic,
-    )
-
-    repo_performance = developer_performance_by_repo(
-        changes,
-        username=username,
-        repo=project,
-        topic=topic
-    )
-
-    topic_performance = developer_performance_by_topic(
-        changes,
-        username=username,
-        topic=topic,
-        repo=project
     )
 
     return {
         "filters": {
             "project": project,
-            "username": username,
             "topic": topic,
             "start_date": start_date,
-            "end_date": end_date
+            "end_date": end_date,
+            "live": live,
         },
-        "repo_performance": repo_performance,
-        "topic_performance": topic_performance
+        "developers": project_developer_metrics(changes),
     }
