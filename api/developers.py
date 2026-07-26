@@ -58,10 +58,17 @@ def developer(
         live=live,
         options=["--all-reviewers", "--comments", "--current-patch-set"],
     )
+    commenter_changes = load_changes(
+        commenter=username,
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+        options=["--all-reviewers", "--comments", "--current-patch-set"],
+    )
     print(f'Owner_changes: {len(owner_changes)}')
     print(f'================================')
     print(f'reviewer_changes: {len(reviewer_changes)}')
-    metrics = developer_snapshot_metrics(owner_changes, username, reviewer_changes=reviewer_changes)
+    metrics = developer_snapshot_metrics(username,dev_changes=owner_changes, reviewer_changes=reviewer_changes,commenter_changes=commenter_changes)
     return {
         "username": username,
         "snapshot_time": datetime.utcnow(),

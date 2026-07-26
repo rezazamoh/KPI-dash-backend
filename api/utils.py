@@ -37,6 +37,7 @@ def load_changes(
     project: str | None = None,
     topic: str | None = None,
     reviewer: str | None = None,
+    commenter: str | None = None,
     options: list | None = None,
 ):
     parsed_start, parsed_end = parse_date_range(start_date, end_date)
@@ -47,6 +48,7 @@ def load_changes(
             end_date=parsed_end,
             owner=username,
             reviewer=reviewer,
+            commenter=commenter,
             project=project,
             topic=topic,
             options=options,
@@ -57,6 +59,7 @@ def load_changes(
         end_date=parsed_end,
         owner=username,
         reviewer=reviewer,
+        commenter=commenter,
         project=project,
         topic=topic,
     )

@@ -57,6 +57,7 @@ def get_gerrit_changes(
     end_date=None,
     owner=None,
     reviewer=None,
+    commenter=None,
     project=None,
     topic=None,
 ):
@@ -107,6 +108,24 @@ def get_gerrit_changes(
                 for r in raw.get("allReviewers", [])
             ):
                 continue
+
+        if commenter:
+            found = False
+
+            for comment in raw.get("comments", []):
+
+                commenter_user = comment.get("reviewer")
+
+                if not commenter_user:
+                    continue
+
+                if commenter_user.get("username") == commenter:
+                    found = True
+                    break
+
+            if not found:
+                continue
+            
         results.append(raw)
 
     return results
