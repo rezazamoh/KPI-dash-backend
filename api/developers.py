@@ -58,6 +58,9 @@ def developer(
         live=live,
         options=["--all-reviewers", "--comments", "--current-patch-set"],
     )
+    print(f'Owner_changes: {len(owner_changes)}')
+    print(f'================================')
+    print(f'reviewer_changes: {len(reviewer_changes)}')
     metrics = developer_snapshot_metrics(owner_changes, username, reviewer_changes=reviewer_changes)
     return {
         "username": username,

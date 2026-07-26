@@ -125,6 +125,86 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
 
     return changes
 
+def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, options=None):
+    """
+    Fetch Gerrit changes via SSH query with optional filtering parameters.
+    
+    Args:
+        start_date (str|datetime, optional): Start date in YYYY-MM-DD format.
+        end_date (str|datetime, optional): End date in YYYY-MM-DD format.
+        owner (str, optional): Gerrit owner username filter.
+        project (str, optional): Gerrit project filter.
+        topic (str, optional): Gerrit topic filter.
+    
+    Returns:
+        list: List of parsed change objects with raw JSON
+    """
+
+    def format_value(value):
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d")
+        return str(value)
+
+    query_terms = []
+    formatted_start = format_value(start_date)
+    formatted_end = format_value(end_date)
+
+    if formatted_start:
+        query_terms.append(f'after:"{formatted_start}"')
+    if formatted_end:
+        query_terms.append(f'before:"{formatted_end}"')
+    if owner:
+        query_terms.append(f'owner:"{owner}"')
+    if reviewer:
+        query_terms.append(f'reviewer:"{reviewer}"')
+    if project:
+        query_terms.append(f'project:"{project}"')
+    if topic:
+        query_terms.append(f'topic:"{topic}"')
+
+    if not query_terms:
+        fallback_end = datetime.now()
+        fallback_start = fallback_end - timedelta(days=365)
+        query_terms.extend([
+            f'after:"{fallback_start.strftime("%Y-%m-%d")}"',
+            f'before:"{fallback_end.strftime("%Y-%m-%d")}"',
+        ])
+
+    if options is None:
+        options = DEFAULT_options
+
+    print(f"[DEBUG] READING FROM JSON FILE")
+    changes = []
+    line_count = 0
+
+    with open("data/last_300_changes.json", "r") as file:
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+            line_count += 1
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"[WARN] Failed to parse JSON on line {line_count}: {str(e)}")
+                continue
+
+            # Skip Gerrit statistics row
+            if "rowCount" in obj:
+                print(f"[INFO] Query returned {obj.get('rowCount')} total matches")
+                continue
+
+            # Parse and enrich the change object
+            change = _parse_change(obj)
+            changes.append(change)
+
+    print(f"[INFO] Processed {line_count} lines from SSH output")
+    print(f"[INFO] Parsed {len(changes)} valid changes")
+
+    return changes
+
 
 def _parse_change(obj):
     """

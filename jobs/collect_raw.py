@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from collectors.gerrit_ssh import fetch_changes
+from collectors.gerrit_ssh import fetch_changes , fetch_changes_from_json
 from database.crud import upsert_gerrit_change
 
 
@@ -25,7 +25,8 @@ def collect_gerrit_changes(start_date=None, end_date=None):
     print(f"Fetching Gerrit changes from {start_date} to {end_date}")
     
     # Fetch changes from Gerrit via SSH
-    changes = fetch_changes(start_date, end_date)
+    #changes = fetch_changes(start_date, end_date)
+    changes = fetch_changes_from_json(start_date, end_date)
     
     # Upsert each change into the database
     for change in changes:

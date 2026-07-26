@@ -56,6 +56,7 @@ def load_changes(
         start_date=parsed_start,
         end_date=parsed_end,
         owner=username,
+        reviewer=reviewer,
         project=project,
         topic=topic,
     )

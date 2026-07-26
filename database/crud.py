@@ -56,6 +56,7 @@ def get_gerrit_changes(
     start_date=None,
     end_date=None,
     owner=None,
+    reviewer=None,
     project=None,
     topic=None,
 ):
@@ -91,10 +92,20 @@ def get_gerrit_changes(
     results = []
     for row in rows:
         raw = row.raw_json
+
+        if not isinstance(raw, dict):
+            continue
+
+        # topic filter
         if topic:
-            if not isinstance(raw, dict):
-                continue
             if (raw.get("topic") or "untagged") != topic:
+                continue
+
+        if reviewer:
+            if not any(
+                r.get("username") == reviewer
+                for r in raw.get("allReviewers", [])
+            ):
                 continue
         results.append(raw)
 
