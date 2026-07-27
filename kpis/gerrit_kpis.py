@@ -4,7 +4,10 @@ from statistics import mean
 def _people_stats(counter, change_counts):
 
     if not counter:
-        return None
+        return {
+            "people": [],
+            "stats": None,
+        }
 
     people = [
         {
@@ -20,26 +23,25 @@ def _people_stats(counter, change_counts):
 
     person_values = list(counter.values())
 
-    result = {
-        "people": people,
-        "stats": {
-            "per_person": {
-                "min": min(person_values),
-                "mean": round(mean(person_values), 2),
-                "max": max(person_values),
-            }
-        },
+    stats = {
+        "per_person": {
+            "min": min(person_values),
+            "mean": round(mean(person_values), 2),
+            "max": max(person_values),
+        }
     }
 
     if change_counts:
-        result["stats"]["per_change"] = {
+        stats["per_change"] = {
             "min": min(change_counts),
             "mean": round(mean(change_counts), 2),
             "max": max(change_counts),
         }
 
-    return result
-
+    return {
+        "people": people,
+        "stats": stats,
+    }
 def _normalize_owner(change):
     owner = change.get("owner")
 
@@ -47,10 +49,6 @@ def _normalize_owner(change):
         return owner.get("username") or owner.get("name")
     
     return owner
-
-def _normalize_topic(change):
-    topic = change.get("topic")
-    return topic if topic else "untagged"
 
 def _changes_by_status_per_repo(changes):
     """
@@ -218,8 +216,8 @@ def reviewer_response_time(changes, username):
                 if first_comment_ts is None or ts < first_comment_ts:
                     first_comment_ts = ts
 
-        if first_comment_ts is not None and first_comment_ts > added_ts:
-            hours.append((first_comment_ts - added_ts) / 3600)
+        if first_comment_ts is not None and first_comment_ts < added_ts:
+            hours.append(abs(first_comment_ts - added_ts) / 3600)
 
     if not hours:
         return None
@@ -230,30 +228,64 @@ def reviewer_response_time(changes, username):
         "max_hours": round(max(hours), 2),
     }
 
-def _lead_time(dev_changes):
+def _lead_time(changes, debug=False):
+    """
+    Calculate lead time (change creation -> merge).
 
-    durations = []
+    Args:
+        changes: Developer's changes.
+        debug: If True, include the min/max change URLs for verification.
+    """
 
-    for change in dev_changes:
+    lead_times = []
+
+    for change in changes:
 
         if change.get("status") != "MERGED":
             continue
 
-        created = change.get("createdOn")
-        submitted = change.get("lastUpdated")
+        created = change.get("created_at")
+        updated = change.get("updated_at")
 
-        if created is None or submitted is None:
+        if not created or not updated:
             continue
 
-        durations.append(submitted - created)
+        hours_lt = (updated - created).total_seconds() / 3600
 
-    if not durations:
+        lead_times.append(
+            {
+                "hours": hours_lt,
+                "url": change.get("url"),
+                "change_number": change.get("change_number"),
+            }
+        )
+
+    if not lead_times:
         return None
 
+    lead_times.sort(key=lambda x: x["hours"])
+
+    values = [x["hours"] for x in lead_times]
+
+    if not debug:
+        return {
+            "min": round(values[0], 2),
+            "mean": round(mean(values), 2),
+            "max": round(values[-1], 2),
+        }
+
     return {
-        "min": min(durations),
-        "mean": round(mean(durations), 2),
-        "max": max(durations),
+        "min": {
+            "hours": round(lead_times[0]["hours"], 2),
+            "url": lead_times[0]["url"],
+            "change_number": lead_times[0]["change_number"],
+        },
+        "mean": round(mean(values), 2),
+        "max": {
+            "hours": round(lead_times[-1]["hours"], 2),
+            "url": lead_times[-1]["url"],
+            "change_number": lead_times[-1]["change_number"],
+        },
     }
 
 def build_failure_rate(changes):
@@ -322,7 +354,10 @@ def build_failure_rate(changes):
             changes_with_builds += 1
         if change_has_failure:
             changes_with_failures += 1
-
+    
+    if changes_with_builds == 0:
+        return None
+    
     return {
         "total_changes_with_builds": changes_with_builds,
         "total_outcomes": total_outcomes,
@@ -354,7 +389,7 @@ def summarize_change_metrics(developer, dev_changes, reviewer_changes, commenter
         "review_requests_received":_review_requests_received(dev_changes),
         "comments_sent": _comments_sent(commenter_changes,developer),
         "comments_received":_comments_received(dev_changes),
-        "lead_time": _lead_time(dev_changes),
+        "lead_time": _lead_time(dev_changes,debug=True),
         "build_failure_rate": build_failure_rate(dev_changes),
     }
 
@@ -369,38 +404,32 @@ def developer_snapshot_metrics(
     reviewer_changes = reviewer_changes or []
     commenter_changes = commenter_changes or []
 
-    metrics = {
+    return {
         "change_count": len(dev_changes),
         "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
         "average_patchsets": _average_patchsets(dev_changes),
-        "build_failure_rate": build_failure_rate(dev_changes),
-    }
-
-    optional_metrics = {
-        "review_requests_sent":
-            _review_requests_sent(reviewer_changes, username),
 
         "review_requests_received":
             _review_requests_received(dev_changes),
 
-        "comments_sent":
-            _comments_sent(commenter_changes, username),
+        "review_requests_sent":
+            _review_requests_sent(reviewer_changes, username),
 
         "comments_received":
             _comments_received(dev_changes),
 
+        "comments_sent":
+            _comments_sent(commenter_changes, username),
+
         "lead_time":
-            _lead_time(dev_changes),
+            _lead_time(dev_changes,debug=True),
 
         "reviewer_response_time":
             reviewer_response_time(reviewer_changes, username),
+
+        "build_failure_rate":
+            build_failure_rate(dev_changes),
     }
-
-    for key, value in optional_metrics.items():
-        if value is not None:
-            metrics[key] = value
-
-    return metrics
 
 def developer_performance_grouped(
     username,
@@ -413,7 +442,7 @@ def developer_performance_grouped(
     if group_by == "project":
         key_func = lambda c: c.get("project") or "unknown"
     elif group_by == "topic":
-        key_func = _normalize_topic
+        key_func = lambda c: c.get("topic") or "unknown"
     else:
         raise ValueError(f"Unknown group: {group_by}")
 
