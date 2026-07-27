@@ -398,44 +398,28 @@ def developer_snapshot_metrics(
     dev_changes=None,
     reviewer_changes=None,
     commenter_changes=None,
-    include_interactions=True,
 ):
 
     dev_changes = dev_changes or []
     reviewer_changes = reviewer_changes or []
     commenter_changes = commenter_changes or []
 
-    if include_interactions:
-        return {
-            "change_count": len(dev_changes),
-            "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
-            "average_patchsets": _average_patchsets(dev_changes),
-
-            "review_requests_received":
-                _review_requests_received(dev_changes),
-
-            "review_requests_sent":
-                _review_requests_sent(reviewer_changes, username),
-
-            "comments_received":
-                _comments_received(dev_changes),
-
-            "comments_sent":
-                _comments_sent(commenter_changes, username),
-
-            "lead_time":
-                _lead_time(dev_changes,debug=True),
-
-            "reviewer_response_time":
-                reviewer_response_time(reviewer_changes, username),
-
-            "build_failure_rate":
-                build_failure_rate(dev_changes),
-        }
     return {
         "change_count": len(dev_changes),
         "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
         "average_patchsets": _average_patchsets(dev_changes),
+
+        "review_requests_received":
+            _review_requests_received(dev_changes),
+
+        "review_requests_sent":
+            _review_requests_sent(reviewer_changes, username),
+
+        "comments_received":
+            _comments_received(dev_changes),
+
+        "comments_sent":
+            _comments_sent(commenter_changes, username),
 
         "lead_time":
             _lead_time(dev_changes,debug=True),
@@ -445,8 +429,7 @@ def developer_snapshot_metrics(
 
         "build_failure_rate":
             build_failure_rate(dev_changes),
-    }
-    
+    }    
 
 def developer_performance_grouped(
     username,
@@ -526,7 +509,6 @@ def project_developer_metrics(
             dev_changes=dev_changes,
             reviewer_changes=review,
             commenter_changes=comments,
-            include_interactions=False,
         )
 
     return result
