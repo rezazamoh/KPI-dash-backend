@@ -40,106 +40,89 @@ def developers(
 @router.get("/developers/{username}")
 def developer(
     username: str,
+    repo: list[str] | None = Query(None),
+    topic: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool | None = Query(False)
+    group_by_repo: bool = Query(False),
+    group_by_topic: bool = Query(False),
+    live: bool = Query(False),
 ):
 
     owner_changes = load_changes(
         username=username,
+        project=repo,
+        topic=topic,
         start_date=start_date,
         end_date=end_date,
-        live=live
+        live=live,
     )
+
     reviewer_changes = load_changes(
         reviewer=username,
+        project=repo,
+        topic=topic,
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=["--all-reviewers", "--comments", "--current-patch-set"],
+        options=[
+            "--all-reviewers",
+            "--comments",
+            "--current-patch-set",
+        ],
     )
+
     commenter_changes = load_changes(
         commenter=username,
+        project=repo,
+        topic=topic,
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=["--all-reviewers", "--comments", "--current-patch-set"],
+        options=[
+            "--all-reviewers",
+            "--comments",
+            "--current-patch-set",
+        ],
     )
-    print(f'Owner_changes: {len(owner_changes)}')
-    print(f'================================')
-    print(f'reviewer_changes: {len(reviewer_changes)}')
-    metrics = developer_snapshot_metrics(username,dev_changes=owner_changes, reviewer_changes=reviewer_changes,commenter_changes=commenter_changes)
-    return {
+
+    response = {
         "username": username,
-        "snapshot_time": datetime.utcnow(),
-        "metrics": metrics,
-        "live": live
-    }
-
-@router.get("/developers/performance/{username}")
-def developer_performance_by_username(
-    username: str,
-    repo: str | None = Query(None),
-    topic: str | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
-    live: bool = Query(False),
-):
-
-    dev_changes = load_changes(
-        username=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
-
-    reviewer_changes = load_changes(
-        reviewer=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
-
-    commenter_changes = load_changes(
-        commenter=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
-
-    return {
-
+        "snapshot_time": datetime.now(),
+        "live": live,
         "filters": {
-            "username": username,
             "repo": repo,
             "topic": topic,
             "start_date": start_date,
             "end_date": end_date,
-            "live": live,
         },
-
-        "repo_performance": developer_performance_grouped(
+        "overall_performance": developer_snapshot_metrics(
             username,
-            dev_changes,
-            reviewer_changes,
-            commenter_changes,
-            group_by="project",
-        ),
-
-        "topic_performance": developer_performance_grouped(
-            username,
-            dev_changes,
-            reviewer_changes,
-            commenter_changes,
-            group_by="topic",
+            dev_changes=owner_changes,
+            reviewer_changes=reviewer_changes,
+            commenter_changes=commenter_changes,
         ),
     }
+
+    if group_by_repo:
+        response["grouped_by_repo"] = developer_performance_grouped(
+            username=username,
+            dev_changes=owner_changes,
+            reviewer_changes=reviewer_changes,
+            commenter_changes=commenter_changes,
+            group_by="project",
+        )
+
+    if group_by_topic:
+        response["grouped_by_topic"] = developer_performance_grouped(
+            username=username,
+            dev_changes=owner_changes,
+            reviewer_changes=reviewer_changes,
+            commenter_changes=commenter_changes,
+            group_by="topic",
+        )
+
+    return response
 
 @router.get("/projects")
 def projects(
@@ -164,16 +147,18 @@ def projects(
         "projects": projects
     }
 
-@router.get("/projects/performance/{project:path}")
-def project_performance_for(
+@router.get("/projects/{project:path}")
+def project(
     project: str,
-    topic: str | None = Query(None),
+    username: list[str] | None = Query(None),
+    topic: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     live: bool = Query(False),
 ):
 
-    changes = load_changes(
+    owner_changes = load_changes(
+        username=username,
         project=project,
         topic=topic,
         start_date=start_date,
@@ -181,13 +166,46 @@ def project_performance_for(
         live=live,
     )
 
+    reviewer_changes = load_changes(
+        reviewer=username,
+        project=project,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+        options=[
+            "--all-reviewers",
+            "--comments",
+            "--current-patch-set",
+        ],
+    )
+
+    commenter_changes = load_changes(
+        commenter=username,
+        project=project,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live,
+        options=[
+            "--all-reviewers",
+            "--comments",
+            "--current-patch-set",
+        ],
+    )
+
     return {
         "filters": {
             "project": project,
-            "topic": topic,
+            "developers": username,
+            "topics": topic,
             "start_date": start_date,
             "end_date": end_date,
             "live": live,
         },
-        "developers": project_developer_metrics(changes),
+        "developers": project_developer_metrics(
+            owner_changes,
+            reviewer_changes,
+            commenter_changes,
+        ),
     }

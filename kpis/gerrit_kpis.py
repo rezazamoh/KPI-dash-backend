@@ -398,28 +398,44 @@ def developer_snapshot_metrics(
     dev_changes=None,
     reviewer_changes=None,
     commenter_changes=None,
+    include_interactions=True,
 ):
 
     dev_changes = dev_changes or []
     reviewer_changes = reviewer_changes or []
     commenter_changes = commenter_changes or []
 
+    if include_interactions:
+        return {
+            "change_count": len(dev_changes),
+            "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
+            "average_patchsets": _average_patchsets(dev_changes),
+
+            "review_requests_received":
+                _review_requests_received(dev_changes),
+
+            "review_requests_sent":
+                _review_requests_sent(reviewer_changes, username),
+
+            "comments_received":
+                _comments_received(dev_changes),
+
+            "comments_sent":
+                _comments_sent(commenter_changes, username),
+
+            "lead_time":
+                _lead_time(dev_changes,debug=True),
+
+            "reviewer_response_time":
+                reviewer_response_time(reviewer_changes, username),
+
+            "build_failure_rate":
+                build_failure_rate(dev_changes),
+        }
     return {
         "change_count": len(dev_changes),
         "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
         "average_patchsets": _average_patchsets(dev_changes),
-
-        "review_requests_received":
-            _review_requests_received(dev_changes),
-
-        "review_requests_sent":
-            _review_requests_sent(reviewer_changes, username),
-
-        "comments_received":
-            _comments_received(dev_changes),
-
-        "comments_sent":
-            _comments_sent(commenter_changes, username),
 
         "lead_time":
             _lead_time(dev_changes,debug=True),
@@ -430,6 +446,7 @@ def developer_snapshot_metrics(
         "build_failure_rate":
             build_failure_rate(dev_changes),
     }
+    
 
 def developer_performance_grouped(
     username,
@@ -442,7 +459,9 @@ def developer_performance_grouped(
     if group_by == "project":
         key_func = lambda c: c.get("project") or "unknown"
     elif group_by == "topic":
-        key_func = lambda c: c.get("topic") or "unknown"
+        key_func = lambda c: c.get("topic") or "untagged"
+    elif group_by == "owner":
+        key_func = _normalize_owner 
     else:
         raise ValueError(f"Unknown group: {group_by}")
 
@@ -475,36 +494,39 @@ def developer_performance_grouped(
 
     return result
 
-def project_developer_metrics(changes):
+def project_developer_metrics(
+    owner_changes,
+    reviewer_changes,
+    commenter_changes,
+):
 
-    developers = sorted({
+    grouped = defaultdict(list)
 
-        _normalize_owner(change)
-
-        for change in changes
-
-        if _normalize_owner(change)
-
-    })
+    for change in owner_changes:
+        grouped[_normalize_owner(change)].append(change)
 
     result = {}
 
-    for username in developers:
+    for username, dev_changes in grouped.items():
 
-        (
-            dev_changes,
-            reviewer_changes,
-            commenter_changes,
-        ) = split_changes_for_developer(
-            changes,
-            username,
-        )
+        review = [
+            c
+            for c in reviewer_changes
+            if _normalize_owner(c) == username
+        ]
+
+        comments = [
+            c
+            for c in commenter_changes
+            if _normalize_owner(c) == username
+        ]
 
         result[username] = developer_snapshot_metrics(
-            username,
-            dev_changes,
-            reviewer_changes,
-            commenter_changes,
+            username=username,
+            dev_changes=dev_changes,
+            reviewer_changes=review,
+            commenter_changes=comments,
+            include_interactions=False,
         )
 
     return result

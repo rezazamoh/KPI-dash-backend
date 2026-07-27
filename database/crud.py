@@ -75,17 +75,31 @@ def get_gerrit_changes(
         list: List of raw_json objects for matching changes.
     """
 
+    def _as_list(value):
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            return [value]
+
+        return value
+
     db = SessionLocal()
     query = db.query(GerritChange)
+
+    owner = _as_list(owner)
+    reviewer = _as_list(reviewer)
+    project = _as_list(project)
+    topic = _as_list(topic)
 
     if start_date is not None:
         query = query.filter(GerritChange.updated_at >= start_date)
     if end_date is not None:
         query = query.filter(GerritChange.updated_at <= end_date)
     if owner:
-        query = query.filter(GerritChange.owner == owner)
+        query = query.filter(GerritChange.owner.in_(owner))
     if project:
-        query = query.filter(GerritChange.project == project)
+        query = query.filter(GerritChange.project.in_(project))
 
     rows = query.all()
     db.close()
@@ -99,14 +113,20 @@ def get_gerrit_changes(
 
         # topic filter
         if topic:
-            if (raw.get("topic") or "untagged") != topic:
+            change_topic = raw.get("topic") or "untagged"
+
+            if change_topic not in topic:
                 continue
 
         if reviewer:
-            if not any(
-                r.get("username") == reviewer
+
+            reviewers = {
+                r.get("username")
                 for r in raw.get("allReviewers", [])
-            ):
+                if r.get("username")
+            }
+
+            if not reviewers.intersection(reviewer):
                 continue
 
         if commenter:

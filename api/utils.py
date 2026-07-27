@@ -30,15 +30,15 @@ def parse_date_range(start_date: str | None, end_date: str | None):
 
 
 def load_changes(
-    start_date: str | None,
-    end_date: str | None,
-    live: bool,
-    username: str | None = None,
-    project: str | None = None,
-    topic: str | None = None,
-    reviewer: str | None = None,
-    commenter: str | None = None,
-    options: list | None = None,
+    start_date=None,
+    end_date=None,
+    live=False,
+    username=None,      # str | list[str]
+    reviewer=None,      # str | list[str]
+    commenter=None,     # str | list[str]
+    project=None,       # str | list[str]
+    topic=None,         # str | list[str]
+    options=None,
 ):
     parsed_start, parsed_end = parse_date_range(start_date, end_date)
 

@@ -34,6 +34,19 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         if isinstance(value, datetime):
             return value.strftime("%Y-%m-%d")
         return str(value)
+    
+    def add_query_terms(query_terms, key, value):
+        if not value:
+            return
+
+        if isinstance(value, str):
+            value = [value]
+
+        if len(value) == 1:
+            query_terms.append(f'{key}:"{value[0]}"')
+        else:
+            joined = " OR ".join(f'{key}:"{v}"' for v in value)
+            query_terms.append(f"({joined})")
 
     query_terms = []
     formatted_start = format_value(start_date)
@@ -43,16 +56,12 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         query_terms.append(f'after:"{formatted_start}"')
     if formatted_end:
         query_terms.append(f'before:"{formatted_end}"')
-    if owner:
-        query_terms.append(f'owner:"{owner}"')
-    if reviewer:
-        query_terms.append(f'reviewer:"{reviewer}"')
-    if commenter:
-            query_terms.append(f'commentby:"{commenter}"')
-    if project:
-        query_terms.append(f'project:"{project}"')
-    if topic:
-        query_terms.append(f'topic:"{topic}"')
+        
+    add_query_terms(query_terms, "owner", owner)
+    add_query_terms(query_terms, "reviewer", reviewer)
+    add_query_terms(query_terms, "commentby", commenter)
+    add_query_terms(query_terms, "project", project)
+    add_query_terms(query_terms, "topic", topic)
 
     if not query_terms:
         fallback_end = datetime.now()
