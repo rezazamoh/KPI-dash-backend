@@ -6,6 +6,7 @@ from kpis.gerrit_kpis import (
     project_developer_metrics,
 )
 from api.utils import load_changes
+from collectors.gerrit_ssh import ls_projects
 
 router = APIRouter()
 
@@ -13,7 +14,7 @@ router = APIRouter()
 def developers(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool | None = Query(False)
+    live: bool | None = Query(True)
 ):
     changes = load_changes(
         start_date=start_date,
@@ -46,7 +47,7 @@ def developer(
     end_date: str | None = Query(None),
     group_by_repo: bool = Query(False),
     group_by_topic: bool = Query(False),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
 
     owner_changes = load_changes(
@@ -128,16 +129,19 @@ def developer(
 def projects(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool | None = Query(False)
+    live: bool | None = Query(True)
 ):
-    
-    changes = load_changes(
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=[],
-    )
-    projects = sorted({c.get("project") for c in changes if c.get("project")})
+    if live and not start_date and not end_date:
+        projects = sorted(ls_projects())
+    else:
+        changes = load_changes(
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+            options=[],
+        )
+        projects = sorted({c.get("project") for c in changes if c.get("project")})
+
     return {
         "filters": {
             "start_date": start_date,
@@ -154,7 +158,7 @@ def project(
     topic: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
 
     owner_changes = load_changes(

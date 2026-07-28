@@ -1,3 +1,4 @@
+from datetime import datetime
 from database.db import SessionLocal
 
 from database.raw_models import (
@@ -14,8 +15,7 @@ def upsert_gerrit_change(change):
     Upsert a Gerrit change into the database.
     
     Args:
-        change (dict): Change object with keys: id, change_number, project, 
-                      owner, status, created_at, updated_at, raw_json
+        change (dict): Raw Gerrit change object.
     """
 
     db = SessionLocal()
@@ -26,26 +26,30 @@ def upsert_gerrit_change(change):
     )
 
     owner_username = change["owner"].get("username", "unknown") if isinstance(change["owner"], dict) else str(change["owner"])
+    change_number = change.get("number")
+    created_at = datetime.fromtimestamp(change.get("createdOn")) if change.get("createdOn") else None
+    updated_at = datetime.fromtimestamp(change.get("lastUpdated")) if change.get("lastUpdated") else None
+    raw_json = change.get("raw_json", change)
 
     if existing:
-        existing.change_number = change.get("change_number")
+        existing.change_number = change_number
         existing.project = change.get("project")
         existing.owner = owner_username
         existing.status = change.get("status")
-        existing.created_at = change.get("created_at")
-        existing.updated_at = change.get("updated_at")
-        existing.raw_json = change.get("raw_json", change)
+        existing.created_at = created_at
+        existing.updated_at = updated_at
+        existing.raw_json = raw_json
     else:
         db.add(
             GerritChange(
                 change_id=change["id"],
-                change_number=change.get("change_number"),
+                change_number=change_number,
                 project=change.get("project"),
                 owner=owner_username,
                 status=change.get("status"),
-                created_at=change.get("created_at"),
-                updated_at=change.get("updated_at"),
-                raw_json=change.get("raw_json", change)
+                created_at=created_at,
+                updated_at=updated_at,
+                raw_json=raw_json
             )
         )
 

@@ -127,9 +127,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
             print(f"[INFO] Query returned {obj.get('rowCount')} total matches")
             continue
 
-        # Parse and enrich the change object
-        change = _parse_change(obj)
-        changes.append(change)
+        changes.append(dict(obj))
 
     print(f"[INFO] Processed {line_count} lines from SSH output")
     print(f"[INFO] Parsed {len(changes)} valid changes")
@@ -171,9 +169,7 @@ def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=
                 print(f"[INFO] Query returned {obj.get('rowCount')} total matches")
                 continue
 
-            # Parse and enrich the change object
-            change = _parse_change(obj)
-            changes.append(change)
+            changes.append(dict(obj))
 
     print(f"[INFO] Processed {line_count} lines from SSH output")
     print(f"[INFO] Parsed {len(changes)} valid changes")
@@ -181,47 +177,35 @@ def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=
     return changes
 
 
-def _parse_change(obj):
-    """
-    Parse a raw Gerrit change object and extract required fields.
-    
-    Args:
-        obj (dict): Raw Gerrit change object
-    
-    Returns:
-        dict: Parsed change with required fields
-    """
-    
-    # Extract owner information
-    owner_data = obj.get("owner", {})
-    owner_username = owner_data.get("username", "unknown")
-    
-    # Extract dates - Gerrit timestamps are in seconds since epoch
-    created_timestamp = obj.get("createdOn", 0)
-    updated_timestamp = obj.get("lastUpdated", 0)
-    
-    created_at = datetime.fromtimestamp(created_timestamp) if created_timestamp else None
-    updated_at = datetime.fromtimestamp(updated_timestamp) if updated_timestamp else None
-    
-    # Build the parsed change object
-    change = {
-        "id": obj.get("id"),
-        "change_number": obj.get("number"),
-        "project": obj.get("project"),
-        "owner": owner_data,
-        "status": obj.get("status"),
-        "created_at": created_at,
-        "updated_at": updated_at,
-        # Expose raw Gerrit fields at top level for metrics functions
-        "createdOn": obj.get("createdOn"),
-        "lastUpdated": obj.get("lastUpdated"),
-        "submitted": obj.get("submitted"),
-        "allReviewers": obj.get("allReviewers", []),
-        "comments": obj.get("comments", []),
-        "patchSets": obj.get("patchSets", []),
-        "currentPatchSet": obj.get("currentPatchSet"),
-        # Keep full raw JSON for analysis
-        "raw_json": obj,
-    }
-    
-    return change
+def ls_projects():
+    """Return a list of Gerrit projects via SSH ls-projects."""
+    cmd = [
+        "ssh",
+        "-p", str(GERRIT_PORT),
+        f"{GERRIT_USER}@{GERRIT_HOST}",
+        "gerrit",
+        "ls-projects",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        print("[ERROR] SSH connection timed out while listing projects.")
+        return []
+    except Exception as e:
+        print(f"[ERROR] SSH execution failed while listing projects: {str(e)}")
+        return []
+
+    if result.returncode != 0:
+        print(f"[ERROR] ls-projects failed with return code {result.returncode}")
+        print(f"[ERROR] stderr: {result.stderr}")
+        return []
+
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+

@@ -1,4 +1,5 @@
 from collections import defaultdict
+from datetime import datetime
 from statistics import mean
 
 def _people_stats(counter, change_counts):
@@ -244,19 +245,21 @@ def _lead_time(changes, debug=False):
         if change.get("status") != "MERGED":
             continue
 
-        created = change.get("created_at")
-        updated = change.get("updated_at")
+        created_ts = change.get("createdOn")
+        updated_ts = change.get("lastUpdated")
 
-        if not created or not updated:
+        if not created_ts or not updated_ts:
             continue
 
+        created = datetime.fromtimestamp(created_ts)
+        updated = datetime.fromtimestamp(updated_ts)
         hours_lt = (updated - created).total_seconds() / 3600
 
         lead_times.append(
             {
                 "hours": hours_lt,
                 "url": change.get("url"),
-                "change_number": change.get("change_number"),
+                "change_number": change.get("number"),
             }
         )
 
