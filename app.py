@@ -16,4 +16,4 @@ def health():
 
 
 app.include_router(developers_router)
-app.include_router(team_router)
+#app.include_router(team_router)

@@ -293,23 +293,29 @@ def build_failure_rate(changes):
     Calculate build & test pipeline failure rate from Jenkins comments
     on Gerrit changes.
 
-    Scans each change's comments for Jenkins reviewer entries and parses
-    the vote labels (e.g. Verified+1, Build-1, Test-1) from the first
-    line of each comment to determine build/test outcomes.
+    Supports both single-vote comments such as:
 
-    This function is generic and works on any set of changes (filtered
-    by developer, project, topic, etc.) so it can be reused across
-    different API contexts.
+        Patch Set 1: Verified+1
 
-    Args:
-        changes: List of Gerrit change dicts (must include 'comments')
+    and multi-vote comments such as:
 
-    Returns:
-        dict with aggregate build failure statistics and per-label
-        breakdown
+        Patch Set 1: Verified+1 Build+1 Code-Review+2
+
+    Only CI labels with +/-1 votes are considered.
     """
+
     import re
-    pattern = re.compile(r'Patch Set \d+:\s*(\w+)([+-]\d+)\s*$')
+
+    header_pattern = re.compile(r"^Patch Set \d+:")
+    vote_pattern = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*([+-]\d+)")
+
+    # Labels that represent CI/build status
+    CI_LABELS = {
+        "Verified",
+        "Build",
+        "Test",
+        "Pipeline",
+    }
 
     total_outcomes = 0
     failed_outcomes = 0
@@ -318,69 +324,87 @@ def build_failure_rate(changes):
     by_label = {}
 
     for change in changes:
+
         change_has_build = False
         change_has_failure = False
 
         for comment in change.get("comments", []):
+
             if comment.get("reviewer", {}).get("username") != "jenkins":
                 continue
 
             first_line = comment.get("message", "").split("\n")[0].strip()
-            match = pattern.match(first_line)
-            if not match:
+
+            if not header_pattern.match(first_line):
                 continue
 
-            label = match.group(1)
-            vote = match.group(2)
+            for label, vote in vote_pattern.findall(first_line):
 
-            if vote == "+1":
-                total_outcomes += 1
-                change_has_build = True
-            elif vote == "-1":
-                total_outcomes += 1
-                failed_outcomes += 1
-                change_has_build = True
-                change_has_failure = True
-            else:
-                continue
+                # Ignore non-build labels such as Code-Review
+                if label not in CI_LABELS:
+                    continue
 
-            if label not in by_label:
-                by_label[label] = {"total": 0, "failed": 0}
-            by_label[label]["total"] += 1
-            if vote == "-1":
-                by_label[label]["failed"] += 1
+                if vote == "+1":
+                    total_outcomes += 1
+                    change_has_build = True
+
+                elif vote == "-1":
+                    total_outcomes += 1
+                    failed_outcomes += 1
+                    change_has_build = True
+                    change_has_failure = True
+
+                else:
+                    # Ignore +2, 0, etc.
+                    continue
+
+                stats = by_label.setdefault(
+                    label,
+                    {
+                        "total": 0,
+                        "failed": 0,
+                    },
+                )
+
+                stats["total"] += 1
+
+                if vote == "-1":
+                    stats["failed"] += 1
 
         if change_has_build:
             changes_with_builds += 1
+
         if change_has_failure:
             changes_with_failures += 1
-    
+
     if changes_with_builds == 0:
         return None
-    
+
     return {
         "total_changes_with_builds": changes_with_builds,
         "total_outcomes": total_outcomes,
         "failed_outcomes": failed_outcomes,
         "overall_failure_rate": round(
-            failed_outcomes / total_outcomes * 100, 2
+            failed_outcomes / total_outcomes * 100,
+            2,
         ) if total_outcomes else 0,
         "changes_with_failures": changes_with_failures,
         "changes_failure_rate": round(
-            changes_with_failures / changes_with_builds * 100, 2
+            changes_with_failures / changes_with_builds * 100,
+            2,
         ) if changes_with_builds else 0,
         "by_label": {
             label: {
                 "total": stats["total"],
                 "failed": stats["failed"],
                 "failure_rate": round(
-                    stats["failed"] / stats["total"] * 100, 2
+                    stats["failed"] / stats["total"] * 100,
+                    2,
                 ) if stats["total"] else 0,
             }
             for label, stats in by_label.items()
         },
     }
-
 def summarize_change_metrics(developer, dev_changes, reviewer_changes, commenter_changes):
     return {
         "change_count": len(dev_changes),
