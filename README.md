@@ -1,193 +1,267 @@
-# KPI-dash-backend
+﻿# KPI Dash Backend
 
-A FastAPI backend for Gerrit-based KPI reporting.
+A backend service for Gerrit-based KPI reporting, raw change storage, and metric data delivery through FastAPI.
 
-## 1. Setup
+## Table of Contents
 
-Create and activate a Python virtual environment:
+- [Purpose](#purpose)
+- [Main Features](#main-features)
+- [System Architecture](#system-architecture)
+- [Project Structure](#project-structure)
+- [Technologies and Dependencies](#technologies-and-dependencies)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Running the Application](#running-the-application)
+- [Data Flow](#data-flow)
+- [API Overview](#api-overview)
+- [KPI Overview](#kpi-overview)
+- [Live Mode vs Offline Mode](#live-mode-vs-offline-mode)
+- [Database Overview](#database-overview)
+- [Current Limitations and Assumptions](#current-limitations-and-assumptions)
+- [Future Improvements](#future-improvements)
+- [Development Notes](#development-notes)
+
+## Purpose
+
+This project collects Gerrit change data, computes developer and project-level KPIs, and exposes those metrics through a REST API.
+
+It is designed for teams that want to monitor Gerrit review activity, code review collaboration, and delivery metrics.
+
+## Main Features
+
+- Raw Gerrit change ingestion into SQLite
+- Gerrit KPI computation for developers and projects
+- Live Gerrit query support via SSH
+- Offline querying via persisted database records
+- FastAPI endpoints for developer and project metrics
+- Snapshot persistence for developer and team KPI data
+
+## System Architecture
+
+The backend is organized into:
+
+- `app.py` for FastAPI application setup
+- `api/` for request routers and shared API utilities
+- `collectors/` for Gerrit query execution and parsing
+- `database/` for SQLAlchemy models and persistence logic
+- `jobs/` for data ingestion and KPI refresh scripts
+- `kpis/` for metric calculation and graph generation
+- `data/` for sample/offline Gerrit JSON data files
+
+## Project Structure
+
+- `app.py` - application entry point and router registration
+- `api/developers.py` - developer and project API routes
+- `api/team.py` - team graph route implementation
+- `api/utils.py` - shared request processing and live/offline selector
+- `collectors/gerrit_ssh.py` - Gerrit SSH query builder and JSON parser
+- `database/db.py` - SQLite engine and session setup
+- `database/init_db.py` - table creation script
+- `database/raw_models.py` - ORM model for raw Gerrit changes
+- `database/kpi_models.py` - ORM models for KPI snapshots
+- `database/crud.py` - persistence helpers for raw and snapshot data
+- `jobs/collect_raw.py` - ingestion job for Gerrit changes
+- `jobs/refresh_kpis.py` - developer snapshot refresh job
+- `jobs/refresh_team_kpi.py` - team graph snapshot refresh job
+- `kpis/gerrit_kpis.py` - developer/project KPI computations and graphs
+- `kpis/team_kpis.py` - team graph builder
+- `data/` - sample Gerrit/Jenkins/Jira JSON fixtures
+- `config.py` - hardcoded Gerrit/Jenkins/Jira connection settings
+- `requirements.txt` - dependency list
+
+> Note: `api/team.py` is implemented in code but the router is not mounted by default in `app.py`.
+
+## Technologies and Dependencies
+
+- Python 3.10+ (type union syntax used)
+- FastAPI
+- Uvicorn
+- SQLAlchemy
+- SQLite
+- Standard library modules: `subprocess`, `json`, `datetime`, `collections`, `statistics`
+
+Dependencies are listed in `requirements.txt`.
+
+## Installation
 
 ```cmd
 python -m venv venv
 venv\Scripts\activate
-```
-
-Install project dependencies:
-
-```cmd
 pip install -r requirements.txt
 ```
 
-## 2. Configure Gerrit
+## Configuration
 
-Update `config.py` with your Gerrit SSH settings:
+### Gerrit
+
+`config.py` defines Gerrit SSH connection details:
+
+- `GERRIT_HOST`
+- `GERRIT_PORT`
+- `GERRIT_USER`
+
+This project currently uses direct configuration in `config.py` rather than environment variables.
+
+### Database
+
+The SQLite connection is configured in `database/db.py`:
 
 ```python
-GERRIT_HOST = "your.gerrit.host"
-GERRIT_PORT = 29418
-GERRIT_USER = "your_user"
+DATABASE_URL = "sqlite:///metrics.db"
 ```
 
-## 3. Initialize the database
+Change this file to use a different SQLite path.
 
-From the project root:
+### Jenkins and Jira
+
+`config.py` defines Jenkins and Jira placeholders, but current code does not use them.
+
+### Environment variables
+
+No environment-based configuration is supported by the current implementation.
+
+## Running the Application
+
+1. Create the database tables:
 
 ```cmd
 python -m database.init_db
 ```
 
-Expected output:
-
-```text
-Database created
-```
-
-This creates the SQLite database file used by the backend.
-
-## 4. Collect Gerrit changes
-
-The system now loads Gerrit changes via SSH, not from a static JSON export.
-
-Run:
+2. Load raw change data:
 
 ```cmd
 python -m jobs.collect_raw
 ```
 
-This fetches changes from the last 30 days by default and stores them in the database.
-
-To load a custom time window:
-
-```cmd
-python -m jobs.collect_raw 2025-01-01 2025-12-31
-```
-
-## 5. Refresh KPI snapshots
-
-Once raw data is in the database, generate KPI snapshots:
+3. Refresh developer KPI snapshots:
 
 ```cmd
 python -m jobs.refresh_kpis
 ```
 
-This writes developer KPI snapshots to the database for API consumption.
+4. Refresh team KPI snapshot:
 
-## 6. Run the API server
+```cmd
+python -m jobs.refresh_team_kpi
+```
 
-Start FastAPI with Uvicorn:
+5. Start the FastAPI server:
 
 ```cmd
 uvicorn app:app --reload
 ```
 
-Open API docs at:
+6. Open API docs:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-## 7. Available API endpoints
+## Data Flow
 
-### Health
+### Fetching Gerrit changes
 
-- `GET /health`
+- **Live mode**: `api/utils.py` calls `collectors/gerrit_ssh.fetch_changes(...)`, which builds and runs an SSH `gerrit query` command.
+- **Offline mode**: `api/utils.py` calls `database.crud.get_gerrit_changes(...)`, which reads persisted raw changes from SQLite.
 
-### Developers
+### Database storage
 
-- `GET /developers`
-  - Query params: `start_date`, `end_date`
-  - Defaults to full history when date filters are omitted
+- `jobs/collect_raw.py` ingests changes and upserts them into the `gerrit_changes` table.
+- `database/crud.py` persists both normalized metadata and the full raw JSON payload.
 
-- `GET /developers/{username}`
+### KPI calculation
 
-- `GET /developers/performance/{username}`
-  - Query params:
-    - `repo` (project name)
-    - `topic`
-    - `start_date`
-    - `end_date`
-  - Default behavior is full history when dates are omitted
+- `kpis/gerrit_kpis.py` computes developer and project metrics from raw Gerrit change objects.
+- `jobs/refresh_kpis.py` and `jobs/refresh_team_kpi.py` persist snapshot JSON into `developer_snapshots` and `team_snapshots`.
 
-### Projects
+### API layer
 
-- `GET /projects`
-  - Query params: `username`, `start_date`, `end_date`
+- `api/developers.py` exposes developer/project-related query endpoints.
+- `api/utils.py` validates dates and selects the live/offline data source.
+- `app.py` mounts routes and exposes root/health endpoints.
 
-- `GET /projects/performance/{project:path}`
-  - Query params: `username`, `topic`, `start_date`, `end_date`, `live`
+## API Overview
 
-### Team
+| Path | Method | Description | Query Parameters |
+|---|---|---|---|
+| `/` | GET | Health/status message | none |
+| `/health` | GET | Basic service health check | none |
+| `/developers` | GET | List all developer usernames available in the selected dataset | `start_date`, `end_date`, `live` |
+| `/developers/{username}` | GET | Developer KPI summary for a specific username | `repo`, `topic`, `start_date`, `end_date`, `group_by_repo`, `group_by_topic`, `live` |
+| `/projects` | GET | List all projects available in the selected dataset | `start_date`, `end_date`, `live` |
+| `/projects/{project:path}` | GET | Project-level developer metrics for a specific project | `username`, `topic`, `start_date`, `end_date`, `live` |
 
-- `GET /team/graph`
+### Team endpoint note
 
-## 8. Notes
+- `GET /team/graph` exists in `api/team.py`, but the router is not currently mounted by default in `app.py`.
 
-- The `/projects/{repo}/topics` endpoint was removed for now.
-- Date filters are optional and must be provided together: both `start_date` and `end_date`, or neither.
-- `jobs.collect_raw` now uses `collectors/gerrit_ssh.py` to fetch Gerrit changes via SSH.
+### Parameter behavior
 
-## 9. Useful commands
+- `start_date` and `end_date` must be supplied together or omitted.
+- `repo`, `username`, and `topic` may be provided as repeated query parameters.
+- `live=true` forces Gerrit SSH query execution instead of SQLite lookups.
 
-Recreate the database from scratch:
+## KPI Overview
 
-```cmd
-del metrics.db
-python -m database.init_db
-```
+| KPI | What it represents |
+|---|---|
+| `change_count` | Number of Gerrit changes owned by the developer |
+| `changes_by_status_per_repo` | Counts of changes grouped by Gerrit status and project |
+| `average_patchsets` | Average number of patch sets per owned change |
+| `review_requests_received` | Review requests received by a developer, with reviewer counts |
+| `review_requests_sent` | Review requests sent by a developer when acting as reviewer |
+| `comments_received` | Comments received on a developer's owned changes |
+| `comments_sent` | Comments authored by a developer on others' changes |
+| `lead_time` | Lead time from change creation to final update for merged changes |
+| `reviewer_response_time` | Time between reviewer assignment and first reviewer comment |
+| `build_failure_rate` | Failure rate derived from Jenkins-style Gerrit vote comments |
+| `review_edges` | Reviewer-to-owner review relationship counts |
+| `comment_edges` | Commenter-to-owner relationship counts |
+| `nodes` / `edges` | Team graph nodes and review-edge structure from raw changes |
 
-Reload raw Gerrit data:
+## Live Mode vs Offline Mode
 
-```cmd
-python -m jobs.collect_raw
-```
+- **Live mode**: Uses Gerrit SSH query through `collectors/gerrit_ssh.py`.
+- **Offline mode**: Uses stored raw change records from SQLite.
 
-Recalculate KPI snapshots:
+In the current implementation, `jobs/collect_raw.py` uses `fetch_changes_from_json(...)` and expects `data/last_300_changes.json`, which is not present in the current repository snapshot.
 
-```cmd
-python -m jobs.refresh_kpis
-```
+## Database Overview
 
-Start the server:
+| Table | Purpose |
+|---|---|
+| `gerrit_changes` | Raw Gerrit change records and metadata |
+| `developer_snapshots` | Persisted developer KPI snapshot JSON |
+| `team_snapshots` | Persisted team graph snapshot JSON |
 
-```cmd
-uvicorn app:app --reload
-```
+`gerrit_changes` stores normalized columns such as `project`, `owner`, `status`, `created_at`, `updated_at`, and `raw_json`.
 
-## 10. Current project layout
+## Current Limitations and Assumptions
 
-```text
-KPI-dash-backend/
-├── app.py
-├── api/
-│   ├── __init__.py
-│   ├── developers.py
-│   └── team.py
-├── collectors/
-│   ├── __init__.py
-│   └── gerrit_ssh.py
-├── database/
-│   ├── __init__.py
-│   ├── crud.py
-│   ├── db.py
-│   ├── global_models.py
-│   ├── init_db.py
-│   ├── kpi_models.py
-│   └── raw_models.py
-├── jobs/
-│   ├── __init__.py
-│   ├── collect_raw.py
-│   ├── refresh_kpis.py
-│   └── refresh_team_kpi.py
-├── kpis/
-│   ├── __init__.py
-│   ├── gerrit_kpis.py
-│   └── team_kpis.py
-├── clients/
-│   ├── __init__.py
-│   ├── file_loader.py
-│   ├── gerrit.py
-│   ├── jenkins.py
-│   └── jira.py
-├── config.py
-├── requirements.txt
-└── README.md
-```
+- Configuration is hardcoded in `config.py` and `database/db.py`.
+- Environment variables are not supported.
+- `api/team.py` is implemented but not mounted in `app.py`.
+- `jobs/collect_raw.py` references `data/last_300_changes.json`, which is not present in the repository.
+- Jenkins and Jira settings exist in `config.py` but are not consumed.
+- `jobs/refresh_kpis.py` appears to pass arguments incorrectly into `developer_snapshot_metrics`.
+- There is no authentication or API access control.
+- SQLite is the only supported database backend.
+
+## Future Improvements
+
+- Add environment-based configuration for Gerrit and database settings.
+- Mount the team router in `app.py` and document `/team/graph` as active.
+- Correct `jobs/refresh_kpis.py` so developer snapshots are calculated per developer.
+- Add a formal test suite for API routes and KPI calculations.
+- Support configurable database backends beyond SQLite.
+- Improve input validation and error handling for query parameters.
+- Replace hardcoded credentials with secure secret management.
+
+## Development Notes
+
+- Use `python -m database.init_db` before ingesting data.
+- Run `python -m jobs.collect_raw` to populate raw change data.
+- `uvicorn app:app --reload` starts the API server.
+- The current data ingestion path relies on JSON fixtures rather than live Gerrit SSH by default.
+- The `collectors/gerrit_ssh.py` implementation can be used for live Gerrit queries if the SSH config is valid.
