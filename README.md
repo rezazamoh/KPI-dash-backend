@@ -122,6 +122,8 @@ No environment-based configuration is supported by the current implementation.
 
 ## Running the Application
 
+For using live mode which is default option, there is no need for step 1 to 4. Just start from 5.
+
 1. Create the database tables:
 
 ```cmd
