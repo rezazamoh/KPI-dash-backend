@@ -57,6 +57,11 @@ def developer(
         start_date=start_date,
         end_date=end_date,
         live=live,
+        options=[
+            "--all-reviewers",
+            "--patch-sets",
+            "--current-patch-set",
+        ]
     )
 
     reviewer_changes = load_changes(
