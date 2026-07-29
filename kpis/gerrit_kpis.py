@@ -2,6 +2,21 @@ from collections import defaultdict
 from datetime import datetime
 from statistics import mean
 
+def projects_with_counts(changes_by_status_per_repo):
+    totals = {}
+
+    for repos in changes_by_status_per_repo.values():
+        for project, count in repos.items():
+            totals[project] = totals.get(project, 0) + count
+
+    return [
+        {
+            "project": project,
+            "changes": count,
+        }
+        for project, count in sorted(totals.items())
+    ]
+
 def _people_stats(counter, change_counts):
 
     if not counter:
@@ -433,9 +448,9 @@ def developer_snapshot_metrics(
 
     return {
         "change_count": len(dev_changes),
+        "projects": projects_with_counts(_changes_by_status_per_repo(dev_changes)),
         "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
         "average_patchsets": _average_patchsets(dev_changes),
-
         "review_requests_received":
             _review_requests_received(dev_changes),
 
@@ -573,82 +588,3 @@ def split_changes_for_developer(changes, username):
         reviewer_changes,
         commenter_changes,
     )
-
-def review_comment_graph(changes):
-
-    review_edges = defaultdict(int)
-    comment_edges = defaultdict(int)
-
-    for change in changes:
-
-        owner = (
-            change.get("owner", {})
-            .get("username")
-        )
-
-        if not owner:
-            continue
-
-        for reviewer in change.get(
-            "allReviewers",
-            []
-        ):
-
-            reviewer_name = reviewer.get(
-                "username"
-            )
-
-            if (
-                not reviewer_name
-                or reviewer_name == owner
-            ):
-                continue
-
-            review_edges[
-                (reviewer_name, owner)
-            ] += 1
-
-        for comment in change.get(
-            "comments",
-            []
-        ):
-
-            commenter = (
-                comment.get(
-                    "reviewer",
-                    {}
-                )
-                .get("username")
-            )
-
-            if (
-                not commenter
-                or commenter == owner
-            ):
-                continue
-
-            comment_edges[
-                (commenter, owner)
-            ] += 1
-
-    return {
-        "review_edges": [
-            {
-                "source": src,
-                "target": dst,
-                "count": count
-            }
-            for (src, dst), count
-            in review_edges.items()
-        ],
-
-        "comment_edges": [
-            {
-                "source": src,
-                "target": dst,
-                "count": count
-            }
-            for (src, dst), count
-            in comment_edges.items()
-        ]
-    }

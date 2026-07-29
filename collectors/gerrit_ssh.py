@@ -4,15 +4,6 @@ from datetime import datetime, timedelta
 from config import GERRIT_HOST, GERRIT_PORT, GERRIT_USER
 
 
-DEFAULT_options = [
-    "--all-reviewers",
-    "--comments",
-    "--patch-sets",
-    "--current-patch-set",
-    "--submit-records",
-]
-
-
 def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
@@ -72,8 +63,8 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         ])
 
     if options is None:
-        options = DEFAULT_options
-
+        options = []
+        
     cmd = [
         "ssh",
         "-p", str(GERRIT_PORT),
