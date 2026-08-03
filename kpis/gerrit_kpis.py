@@ -379,8 +379,7 @@ def build_failure_rate(changes):
     CI_LABELS = {
         "Verified",
         "Build",
-        "Test",
-        "Pipeline",
+        "Code-Review",
     }
 
     total_outcomes = 0
@@ -396,8 +395,8 @@ def build_failure_rate(changes):
 
         for comment in change.get("comments", []):
 
-            if comment.get("reviewer", {}).get("username") != "jenkins":
-                continue
+            #if comment.get("reviewer", {}).get("username") != "jenkins":
+            #    continue
 
             first_line = comment.get("message", "").split("\n")[0].strip()
 
@@ -493,11 +492,13 @@ def developer_snapshot_metrics(
     dev_changes = dev_changes or []
     reviewer_changes = reviewer_changes or []
     commenter_changes = commenter_changes or []
+    #to avoid redundant calls
+    cbspr = _changes_by_status_per_repo(dev_changes)
 
     return {
         "change_count": len(dev_changes),
-        "projects": projects_with_counts(_changes_by_status_per_repo(dev_changes)),
-        "changes_by_status_per_repo": _changes_by_status_per_repo(dev_changes),
+        "projects": projects_with_counts(cbspr),
+        "changes_by_status_per_repo": cbspr,
         "average_patchsets": _average_patchsets(dev_changes),
         "review_requests_received":
             _review_requests_received(dev_changes),

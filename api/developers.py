@@ -21,7 +21,7 @@ def developers(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[],
+        options=[]
     )
 
     devs = sorted({
@@ -58,11 +58,6 @@ def developer(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[
-            "--all-reviewers",
-            "--patch-sets",
-            "--current-patch-set",
-        ]
     )
 
     reviewer_changes = load_changes(
@@ -72,11 +67,6 @@ def developer(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[
-            "--all-reviewers",
-            "--comments",
-            "--current-patch-set",
-        ],
     )
     reviewer_changes = enrich_reviewer_updates(reviewer_changes)
 
@@ -87,11 +77,6 @@ def developer(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[
-            "--all-reviewers",
-            "--comments",
-            "--current-patch-set",
-        ],
     )
 
     response = {
@@ -137,14 +122,14 @@ def developer_projects(
     username: str,
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
     changes = load_changes(
         username=username,
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[],
+        options=[]
     )
 
     projects = sorted({
@@ -164,7 +149,7 @@ def developer_topics(
     repo: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
     changes = load_changes(
         username=username,
@@ -172,7 +157,7 @@ def developer_topics(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[],
+        options=[]
     )
 
     topics = sorted({
@@ -200,7 +185,7 @@ def projects(
             start_date=start_date,
             end_date=end_date,
             live=live,
-            options=[],
+            options=[]
         )
         projects = sorted({c.get("project") for c in changes if c.get("project")})
 
@@ -239,11 +224,6 @@ def project(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[
-            "--all-reviewers",
-            "--comments",
-            "--current-patch-set",
-        ],
     )
 
     commenter_changes = load_changes(
@@ -253,11 +233,6 @@ def project(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[
-            "--all-reviewers",
-            "--comments",
-            "--current-patch-set",
-        ],
     )
 
     return {
@@ -282,7 +257,7 @@ def project_developers(
     topic: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
     changes = load_changes(
         project=project,
@@ -290,7 +265,7 @@ def project_developers(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[],
+        options=[]
     )
 
     developers = sorted({
@@ -311,7 +286,7 @@ def project_topics(
     username: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
-    live: bool = Query(False),
+    live: bool = Query(True),
 ):
     changes = load_changes(
         username=username,
@@ -319,7 +294,7 @@ def project_topics(
         start_date=start_date,
         end_date=end_date,
         live=live,
-        options=[],
+        options=[]
     )
 
     topics = sorted({

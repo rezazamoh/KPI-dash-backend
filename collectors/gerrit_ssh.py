@@ -3,6 +3,33 @@ import subprocess
 from datetime import datetime, timedelta
 from config import GERRIT_HOST, GERRIT_PORT, GERRIT_USER
 
+DEFAULT_options = [
+    "--all-reviewers",
+    "--comments",
+    "--patch-sets",
+    "--current-patch-set",
+    "--submit-records",
+]
+
+
+def run_command(cmd, timeout=30):
+    """Run a subprocess command with UTF-8-safe decoding."""
+    try:
+        return subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        print("[ERROR] SSH connection timed out. Check Gerrit server connectivity.")
+        return None
+    except Exception as e:
+        print(f"[ERROR] SSH execution failed: {str(e)}")
+        return None
+
 
 def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, options=None):
     """
@@ -75,7 +102,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         ])
 
     if options is None:
-        options = []
+        options = DEFAULT_options
         
     cmd = [
         "ssh",
@@ -94,18 +121,8 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     else:
         print("[DEBUG] Query terms: <no filters>")
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-    except subprocess.TimeoutExpired:
-        print("[ERROR] SSH connection timed out. Check Gerrit server connectivity.")
-        return []
-    except Exception as e:
-        print(f"[ERROR] SSH execution failed: {str(e)}")
+    result = run_command(cmd, timeout=30)
+    if result is None:
         return []
 
     # Check for SSH errors
@@ -190,18 +207,8 @@ def ls_projects():
         "ls-projects",
     ]
 
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        print("[ERROR] SSH connection timed out while listing projects.")
-        return []
-    except Exception as e:
-        print(f"[ERROR] SSH execution failed while listing projects: {str(e)}")
+    result = run_command(cmd, timeout=30)
+    if result is None:
         return []
 
     if result.returncode != 0:
