@@ -33,12 +33,24 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         if isinstance(value, str):
             value = [value]
 
+        if key in ("reviewer", "commentby"):
+            if len(value) == 1:
+                query_terms.append(
+                    f'({key}:"{value[0]}" not owner:"{value[0]}")'
+                )
+            else:
+                parts = [
+                    f'({key}:"{v}" not owner:"{v}")'
+                    for v in value
+                ]
+                query_terms.append(f"({' OR '.join(parts)})")
+            return
+
         if len(value) == 1:
             query_terms.append(f'{key}:"{value[0]}"')
         else:
             joined = " OR ".join(f'{key}:"{v}"' for v in value)
             query_terms.append(f"({joined})")
-
     query_terms = []
     formatted_start = format_value(start_date)
     formatted_end = format_value(end_date)

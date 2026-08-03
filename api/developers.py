@@ -7,6 +7,7 @@ from kpis.gerrit_kpis import (
 )
 from api.utils import load_changes
 from collectors.gerrit_ssh import ls_projects
+from collectors.gerrit_rest import enrich_reviewer_updates
 
 router = APIRouter()
 
@@ -77,6 +78,7 @@ def developer(
             "--current-patch-set",
         ],
     )
+    reviewer_changes = enrich_reviewer_updates(reviewer_changes)
 
     commenter_changes = load_changes(
         commenter=username,

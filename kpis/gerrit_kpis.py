@@ -183,40 +183,57 @@ def _comments_sent(commenter_changes, developer):
 
     return _people_stats(owners,[])
 
+from datetime import datetime
+from statistics import mean
+
+from collectors.gerrit_rest import enrich_reviewer_updates
+
 def _reviewer_added_ts(change, username):
-    """Get the timestamp when `username` was added as a reviewer on a change."""
-    sources = []
-    cps = change.get("currentPatchSet")
-    if cps and isinstance(cps, dict):
-        sources.append(cps)
-    for ps in change.get("patchSets", []):
-        if isinstance(ps, dict):
-            sources.append(ps)
+    """
+    Return the timestamp when `username` was added as a reviewer.
+    """
 
     earliest = None
-    for source in sources:
-        for approval in source.get("approvals", []):
-            by = approval.get("by", {})
-            if isinstance(by, dict) and by.get("username") == username:
-                ts = approval.get("grantedOn")
-                if ts is not None:
-                    if earliest is None or ts < earliest:
-                        earliest = ts
+
+    for update in change.get("reviewer_updates", []):
+        if update.get("state") != "REVIEWER":
+            continue
+
+        reviewer = update.get("reviewer", {})
+        if reviewer.get("username") != username:
+            continue
+
+        ts = update.get("updated")
+        if ts is None:
+            continue
+
+        ts = int(
+            datetime.strptime(
+                ts,
+                "%Y-%m-%d %H:%M:%S.%f000",
+            ).timestamp()
+        )
+
+        if earliest is None or ts < earliest:
+            earliest = ts
+
     return earliest
+
 
 def reviewer_response_time(changes, username):
     """
-    Calculate how long it takes `username` to respond when added as a reviewer.
-    Uses the first comment timestamp minus the timestamp when they were added
-    as a reviewer (from approval entries). Returns min/mean/max hours.
+    Calculate how long it takes `username` to respond after being added
+    as a reviewer.
 
-    Args:
-        changes: List of changes where `username` was a reviewer
-        username: Developer username
+    A response is the earliest of:
+      - a review comment
+      - an approval/vote
 
-    Returns:
-        dict with min_hours, mean_hours, max_hours
+    Returns min/mean/max response time in hours.
     """
+
+    changes = enrich_reviewer_updates(changes)
+
     hours = []
 
     for change in changes:
@@ -224,16 +241,47 @@ def reviewer_response_time(changes, username):
         if added_ts is None:
             continue
 
-        first_comment_ts = None
-        for comment in change.get("comments", []):
-            reviewer = comment.get("reviewer", {}).get("username")
-            ts = comment.get("timestamp")
-            if reviewer == username and ts is not None:
-                if first_comment_ts is None or ts < first_comment_ts:
-                    first_comment_ts = ts
+        first_activity = None
 
-        if first_comment_ts is not None and first_comment_ts < added_ts:
-            hours.append(abs(first_comment_ts - added_ts) / 3600)
+        # Review comments
+        for comment in change.get("comments", []):
+            if comment.get("reviewer", {}).get("username") != username:
+                continue
+
+            ts = comment.get("timestamp")
+            if ts is None or ts < added_ts:
+                continue
+
+            if first_activity is None or ts < first_activity:
+                first_activity = ts
+
+        # Votes / approvals
+        sources = []
+
+        cps = change.get("currentPatchSet")
+        if isinstance(cps, dict):
+            sources.append(cps)
+
+        sources.extend(
+            ps for ps in change.get("patchSets", [])
+            if isinstance(ps, dict)
+        )
+
+        for source in sources:
+            for approval in source.get("approvals", []):
+                by = approval.get("by", {})
+                if by.get("username") != username:
+                    continue
+
+                ts = approval.get("grantedOn")
+                if ts is None or ts < added_ts:
+                    continue
+
+                if first_activity is None or ts < first_activity:
+                    first_activity = ts
+
+        if first_activity is not None:
+            hours.append((first_activity - added_ts) / 3600)
 
     if not hours:
         return None
