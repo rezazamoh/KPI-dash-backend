@@ -68,7 +68,8 @@ def developer(
         end_date=end_date,
         live=live,
     )
-    reviewer_changes = enrich_reviewer_updates(reviewer_changes)
+    if live:
+        reviewer_changes = enrich_reviewer_updates(reviewer_changes)
 
     commenter_changes = load_changes(
         commenter=username,

@@ -168,34 +168,19 @@ def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=
     Returns:
         list: List of parsed change objects with raw JSON
     """
-    print(f"[DEBUG] READING FROM JSON FILE")
-    changes = []
-    line_count = 0
+    print("[DEBUG] READING FROM JSON FILE")
 
-    with open("data/last_300_changes.json", "r") as file:
-        for line in file:
-            line = line.strip()
-            if not line:
-                continue
-            line_count += 1
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as e:
-                print(f"[WARN] Failed to parse JSON on line {line_count}: {str(e)}")
-                continue
+    with open("data/mock_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
 
-            # Skip Gerrit statistics row
-            if "rowCount" in obj:
-                print(f"[INFO] Query returned {obj.get('rowCount')} total matches")
-                continue
+    if not isinstance(data, list):
+        raise ValueError("Expected mock_data.json to contain a JSON array")
 
-            changes.append(dict(obj))
+    changes = data
 
-    print(f"[INFO] Processed {line_count} lines from SSH output")
     print(f"[INFO] Parsed {len(changes)} valid changes")
 
     return changes
-
 
 def ls_projects():
     """Return a list of Gerrit projects via SSH ls-projects."""

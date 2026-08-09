@@ -183,11 +183,6 @@ def _comments_sent(commenter_changes, developer):
 
     return _people_stats(owners,[])
 
-from datetime import datetime
-from statistics import mean
-
-from collectors.gerrit_rest import enrich_reviewer_updates
-
 def _reviewer_added_ts(change, username):
     """
     Return the timestamp when `username` was added as a reviewer.
@@ -231,8 +226,6 @@ def reviewer_response_time(changes, username):
 
     Returns min/mean/max response time in hours.
     """
-
-    changes = enrich_reviewer_updates(changes)
 
     hours = []
 
