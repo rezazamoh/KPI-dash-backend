@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 from statistics import mean
+import re
 
 def projects_with_counts(changes_by_status_per_repo):
     totals = {}
@@ -349,30 +350,28 @@ def _lead_time(changes, debug=False):
 
 def build_failure_rate(changes):
     """
-    Calculate build & test pipeline failure rate from Jenkins comments
-    on Gerrit changes.
+    Calculate build & test pipeline failure rate from Gerrit comments.
 
-    Supports both single-vote comments such as:
+    Supports comments such as:
 
         Patch Set 1: Verified+1
-
-    and multi-vote comments such as:
-
         Patch Set 1: Verified+1 Build+1 Code-Review+2
+        Patch Set 1: Code-Review+2 SonarScan+1 Test-2
 
-    Only CI labels with +/-1 votes are considered.
+    Any CI label in the supported set with a numeric vote is counted.
+    Only +/-1 and +/-2 votes are treated as valid outcomes; +0 and other
+    magnitudes are ignored.
     """
-
-    import re
 
     header_pattern = re.compile(r"^Patch Set \d+:")
     vote_pattern = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*([+-]\d+)")
 
-    # Labels that represent CI/build status
     CI_LABELS = {
         "Verified",
         "Build",
         "Code-Review",
+        "SonarScan",
+        "Test",
     }
 
     total_outcomes = 0
@@ -382,39 +381,29 @@ def build_failure_rate(changes):
     by_label = {}
 
     for change in changes:
-
         change_has_build = False
         change_has_failure = False
 
         for comment in change.get("comments", []):
-
-            #if comment.get("reviewer", {}).get("username") != "jenkins":
-            #    continue
-
             first_line = comment.get("message", "").split("\n")[0].strip()
 
             if not header_pattern.match(first_line):
                 continue
 
             for label, vote in vote_pattern.findall(first_line):
-
-                # Ignore non-build labels such as Code-Review
                 if label not in CI_LABELS:
                     continue
 
-                if vote == "+1":
-                    total_outcomes += 1
-                    change_has_build = True
-
-                elif vote == "-1":
-                    total_outcomes += 1
-                    failed_outcomes += 1
-                    change_has_build = True
-                    change_has_failure = True
-
-                else:
-                    # Ignore +2, 0, etc.
+                vote_value = int(vote)
+                if vote_value not in (-2, -1, 1, 2):
                     continue
+
+                total_outcomes += 1
+                change_has_build = True
+
+                if vote_value < 0:
+                    failed_outcomes += 1
+                    change_has_failure = True
 
                 stats = by_label.setdefault(
                     label,
@@ -426,7 +415,7 @@ def build_failure_rate(changes):
 
                 stats["total"] += 1
 
-                if vote == "-1":
+                if vote_value < 0:
                     stats["failed"] += 1
 
         if change_has_build:

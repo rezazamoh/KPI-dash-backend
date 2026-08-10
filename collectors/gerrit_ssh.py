@@ -104,53 +104,108 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     if options is None:
         options = DEFAULT_options
         
-    cmd = [
-        "ssh",
-        "-p", str(GERRIT_PORT),
-        f"{GERRIT_USER}@{GERRIT_HOST}",
-        "gerrit",
-        "query",
-        *query_terms,
-        "--format=JSON",
-        *options,
-    ]
-    print(cmd)
-    print(f"[DEBUG] Running SSH command to {GERRIT_HOST}:{GERRIT_PORT}")
-    if query_terms:
-        print(f"[DEBUG] Query terms: {' '.join(query_terms)}")
-    else:
-        print("[DEBUG] Query terms: <no filters>")
-
-    result = run_command(cmd, timeout=30)
-    if result is None:
-        return []
-
-    # Check for SSH errors
-    if result.returncode != 0:
-        print(f"[ERROR] SSH command failed with return code {result.returncode}")
-        print(f"[ERROR] stderr: {result.stderr}")
-        return []
-
     changes = []
-    line_count = 0
+    start = 0
+    batch_size = 500
 
-    for line in result.stdout.splitlines():
-        line_count += 1
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError as e:
-            print(f"[WARN] Failed to parse JSON on line {line_count}: {str(e)}")
-            continue
+    while True:
+        cmd = [
+            "ssh",
+            "-p", str(GERRIT_PORT),
+            f"{GERRIT_USER}@{GERRIT_HOST}",
+            "gerrit",
+            "query",
+            *query_terms,
+            "--format=JSON",
+            "--start", str(start),
+            *options,
+            "limit:", str(batch_size),
+        ]
 
-        # Skip Gerrit statistics row
-        if "rowCount" in obj:
-            print(f"[INFO] Query returned {obj.get('rowCount')} total matches")
-            continue
+        print(cmd)
+        print(
+            f"[DEBUG] Running SSH command to "
+            f"{GERRIT_HOST}:{GERRIT_PORT} (start={start})"
+        )
 
-        changes.append(dict(obj))
+        if query_terms:
+            print(f"[DEBUG] Query terms: {' '.join(query_terms)}")
+        else:
+            print("[DEBUG] Query terms: ")
 
-    print(f"[INFO] Processed {line_count} lines from SSH output")
-    print(f"[INFO] Parsed {len(changes)} valid changes")
+        result = run_command(cmd, timeout=30)
+
+        if result is None:
+            print("[ERROR] SSH command returned no result")
+            break
+
+        if result.returncode != 0:
+            print(
+                f"[ERROR] SSH command failed with "
+                f"return code {result.returncode}"
+            )
+            print(f"[ERROR] stderr: {result.stderr}")
+            break
+
+        batch_changes = []
+        more_changes = False
+        line_count = 0
+
+        for line in result.stdout.splitlines():
+            line_count += 1
+
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(
+                    f"[WARN] Failed to parse JSON on line "
+                    f"{line_count}: {str(e)}"
+                )
+                continue
+
+            # Gerrit query statistics row
+            if obj.get("type") == "stats" or "rowCount" in obj:
+                print(
+                    f"[INFO] Batch returned "
+                    f"{obj.get('rowCount')} total matches"
+                )
+
+                more_changes = obj.get("moreChanges", False)
+                continue
+
+            batch_changes.append(dict(obj))
+
+        changes.extend(batch_changes)
+
+        print(
+            f"[INFO] Processed {line_count} lines "
+            f"from SSH output"
+        )
+        print(
+            f"[INFO] Parsed {len(batch_changes)} changes "
+            f"in this batch"
+        )
+        print(
+            f"[INFO] Total parsed changes: {len(changes)}"
+        )
+
+        if not more_changes:
+            break
+
+        # Move to the next page.
+        # Use the number actually received rather than assuming
+        # that Gerrit returned exactly batch_size changes.
+        if not batch_changes:
+            print(
+                "[WARN] Gerrit reported more changes, "
+                "but the current batch contained no changes. "
+                "Stopping to avoid an infinite loop."
+            )
+            break
+
+        start += len(batch_changes)
+
+    print(f"[INFO] Final parsed change count: {len(changes)}")
 
     return changes
 
