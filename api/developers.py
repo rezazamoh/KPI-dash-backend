@@ -118,32 +118,6 @@ def developer(
 
     return response
 
-@router.get("/developers/{username}/projects")
-def developer_projects(
-    username: str,
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
-    live: bool = Query(True),
-):
-    changes = load_changes(
-        username=username,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=[]
-    )
-
-    projects = sorted({
-        c.get("project")
-        for c in changes
-        if c.get("project")
-    })
-
-    return {
-        "username": username,
-        "projects": projects,
-    }
-
 @router.get("/developers/{username}/topics")
 def developer_topics(
     username: str,
@@ -236,6 +210,18 @@ def project(
         live=live,
     )
 
+    developers = sorted({
+        (c.get("owner") or {}).get("username")
+        for c in owner_changes
+        if (c.get("owner") or {}).get("username")
+    })
+
+    topics = sorted({
+        c.get("topic")
+        for c in owner_changes
+        if c.get("topic")
+    })
+
     return {
         "filters": {
             "project": project,
@@ -245,67 +231,11 @@ def project(
             "end_date": end_date,
             "live": live,
         },
-        "developers": project_developer_metrics(
+        "developers": developers,
+        "topics": topics,
+        "developer_metrics": project_developer_metrics(
             owner_changes,
             reviewer_changes,
             commenter_changes,
         ),
-    }
-
-@router.get("/projects/{project:path}/developers")
-def project_developers(
-    project: str,
-    topic: list[str] | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
-    live: bool = Query(True),
-):
-    changes = load_changes(
-        project=project,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=[]
-    )
-
-    developers = sorted({
-        (c.get("owner") or {}).get("username")
-        for c in changes
-        if (c.get("owner") or {}).get("username")
-    })
-
-    return {
-        "project": project,
-        "topics": topic,
-        "developers": developers,
-    }
-
-@router.get("/projects/{project:path}/topics")
-def project_topics(
-    project: str,
-    username: list[str] | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
-    live: bool = Query(True),
-):
-    changes = load_changes(
-        username=username,
-        project=project,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=[]
-    )
-
-    topics = sorted({
-        c.get("topic")
-        for c in changes
-        if c.get("topic")
-    })
-
-    return {
-        "project": project,
-        "developers": username,
-        "topics": topics,
     }
