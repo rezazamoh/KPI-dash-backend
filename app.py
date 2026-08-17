@@ -8,11 +8,5 @@ app = FastAPI()
 def root():
     return {"message": "Server is up and running. See /docs for API documentation."}
 
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-
 app.include_router(developers_router)
 #app.include_router(team_router)

@@ -64,12 +64,10 @@ The backend is organized into:
 - `jobs/refresh_kpis.py` - developer snapshot refresh job
 - `jobs/refresh_team_kpi.py` - team graph snapshot refresh job
 - `kpis/gerrit_kpis.py` - developer/project KPI computations and graphs
-- `kpis/team_kpis.py` - team graph builder
+
 - `data/` - sample Gerrit/Jenkins/Jira JSON fixtures
 - `config.py` - hardcoded Gerrit/Jenkins/Jira connection settings
 - `requirements.txt` - dependency list
-
-> Note: `api/team.py` is implemented in code but the router is not mounted by default in `app.py`.
 
 ## Technologies and Dependencies
 
@@ -114,15 +112,12 @@ Change this file to use a different SQLite path.
 
 ### Jenkins and Jira
 
-`config.py` defines Jenkins and Jira placeholders, but current code does not use them.
+`.env` defines Jenkins and Jira placeholders.
 
-### Environment variables
-
-No environment-based configuration is supported by the current implementation.
 
 ## Running the Application
 
-For using live mode which is default option, there is no need for step 1 to 4. Just start from 5.
+For using live mode which is default option, just start from step 5.
 
 1. Create the database tables:
 
@@ -188,21 +183,18 @@ http://127.0.0.1:8000/docs
 | Path | Method | Description | Query Parameters |
 |---|---|---|---|
 | `/` | GET | Health/status message | none |
-| `/health` | GET | Basic service health check | none |
 | `/developers` | GET | List all developer usernames available in the selected dataset | `start_date`, `end_date`, `live` |
 | `/developers/{username}` | GET | Developer KPI summary for a specific username | `repo`, `topic`, `start_date`, `end_date`, `group_by_repo`, `group_by_topic`, `live` |
+| `/developers/{username}/topics` | GET | List all topics of a specific developer | `repo`, `start_date`, `end_date`,`live` |
 | `/projects` | GET | List all projects available in the selected dataset | `start_date`, `end_date`, `live` |
 | `/projects/{project:path}` | GET | Project-level developer metrics for a specific project | `username`, `topic`, `start_date`, `end_date`, `live` |
-
-### Team endpoint note
-
-- `GET /team/graph` exists in `api/team.py`, but the router is not currently mounted by default in `app.py`.
 
 ### Parameter behavior
 
 - `start_date` and `end_date` must be supplied together or omitted.
-- `repo`, `username`, and `topic` may be provided as repeated query parameters.
+- `repo`, `username`, and `topic` may be provided as repeated query parameters (e.g. looking up a developer's performance through several repos).
 - `live=true` forces Gerrit SSH query execution instead of SQLite lookups.
+- `group_by_repo` and `group_by_topic` flags are used to see developers performance separated by repos or topics along side the overall performance. 
 
 ## KPI Overview
 
@@ -218,16 +210,11 @@ http://127.0.0.1:8000/docs
 | `lead_time` | Lead time from change creation to final update for merged changes |
 | `reviewer_response_time` | Time between reviewer assignment and first reviewer comment |
 | `build_failure_rate` | Failure rate derived from Jenkins-style Gerrit vote comments |
-| `review_edges` | Reviewer-to-owner review relationship counts |
-| `comment_edges` | Commenter-to-owner relationship counts |
-| `nodes` / `edges` | Team graph nodes and review-edge structure from raw changes |
 
-## Live Mode vs Offline Mode
+Live Mode vs Offline Mode
 
-- **Live mode**: Uses Gerrit SSH query through `collectors/gerrit_ssh.py`.
+- **Live mode**: Uses Gerrit SSH and Rest query through `collectors/gerrit_ssh.py` and `collectors/gerrit_rest.py`.
 - **Offline mode**: Uses stored raw change records from SQLite.
-
-In the current implementation, `jobs/collect_raw.py` uses `fetch_changes_from_json(...)` and expects `data/last_300_changes.json`, which is not present in the current repository snapshot.
 
 ## Database Overview
 
@@ -235,26 +222,17 @@ In the current implementation, `jobs/collect_raw.py` uses `fetch_changes_from_js
 |---|---|
 | `gerrit_changes` | Raw Gerrit change records and metadata |
 | `developer_snapshots` | Persisted developer KPI snapshot JSON |
-| `team_snapshots` | Persisted team graph snapshot JSON |
 
 `gerrit_changes` stores normalized columns such as `project`, `owner`, `status`, `created_at`, `updated_at`, and `raw_json`.
 
 ## Current Limitations and Assumptions
 
-- Configuration is hardcoded in `config.py` and `database/db.py`.
-- Environment variables are not supported.
-- `api/team.py` is implemented but not mounted in `app.py`.
-- `jobs/collect_raw.py` references `data/last_300_changes.json`, which is not present in the repository.
 - Jenkins and Jira settings exist in `config.py` but are not consumed.
-- `jobs/refresh_kpis.py` appears to pass arguments incorrectly into `developer_snapshot_metrics`.
 - There is no authentication or API access control.
 - SQLite is the only supported database backend.
 
 ## Future Improvements
 
-- Add environment-based configuration for Gerrit and database settings.
-- Mount the team router in `app.py` and document `/team/graph` as active.
-- Correct `jobs/refresh_kpis.py` so developer snapshots are calculated per developer.
 - Add a formal test suite for API routes and KPI calculations.
 - Support configurable database backends beyond SQLite.
 - Improve input validation and error handling for query parameters.
