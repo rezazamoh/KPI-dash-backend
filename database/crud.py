@@ -2,7 +2,8 @@ from datetime import datetime
 from database.db import SessionLocal
 
 from database.raw_models import (
-    GerritChange
+    GerritChange,
+    JiraIssue
 )
 
 from database.kpi_models import (
@@ -183,3 +184,162 @@ def save_team_snapshot(metrics):
 
     db.commit()
     db.close()
+
+def upsert_jira_issue(issue):
+    db = SessionLocal()
+
+    fields = issue.get("fields", {})
+
+    issue_key = issue["key"]
+
+    assignee = fields.get("assignee")
+    assignee = assignee.get("name") if assignee else None
+
+    status = fields.get("status")
+    status = status.get("name") if status else None
+
+    issue_type = fields.get("issuetype")
+    issue_type = issue_type.get("name") if issue_type else None
+
+    priority = fields.get("priority")
+    priority = priority.get("name") if priority else None
+
+    project = fields.get("project")
+    project = project.get("key") if project else None
+
+    created_at = (
+        datetime.fromisoformat(
+            fields["created"].replace("Z", "+00:00")
+        )
+        if fields.get("created")
+        else None
+    )
+
+    updated_at = (
+        datetime.fromisoformat(
+            fields["updated"].replace("Z", "+00:00")
+        )
+        if fields.get("updated")
+        else None
+    )
+
+    resolved_at = (
+        datetime.fromisoformat(
+            fields["resolutiondate"].replace("Z", "+00:00")
+        )
+        if fields.get("resolutiondate")
+        else None
+    )
+
+    existing = db.get(JiraIssue, issue["id"])
+
+    if existing:
+        existing.issue_key = issue_key
+        existing.project = project
+        existing.summary = fields.get("summary")
+        existing.status = status
+        existing.issue_type = issue_type
+        existing.assignee = assignee
+        existing.priority = priority
+        existing.created_at = created_at
+        existing.updated_at = updated_at
+        existing.resolved_at = resolved_at
+        existing.raw_json = issue
+
+    else:
+        db.add(
+            JiraIssue(
+                issue_id=issue["id"],
+                issue_key=issue_key,
+                project=project,
+                summary=fields.get("summary"),
+                status=status,
+                issue_type=issue_type,
+                assignee=assignee,
+                priority=priority,
+                created_at=created_at,
+                updated_at=updated_at,
+                resolved_at=resolved_at,
+                raw_json=issue,
+            )
+        )
+
+    db.commit()
+    db.close()
+
+def get_jira_issues(
+    start_date=None,
+    end_date=None,
+    project=None,
+    boards=None,
+    issue_key=None,
+):
+    def _as_list(value):
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            return [value]
+
+        return value
+
+    project = _as_list(project)
+    boards = _as_list(boards)
+    issue_key = _as_list(issue_key)
+
+    db = SessionLocal()
+    query = db.query(JiraIssue)
+
+    if start_date is not None:
+        query = query.filter(
+            JiraIssue.updated_at >= start_date
+        )
+
+    if end_date is not None:
+        query = query.filter(
+            JiraIssue.updated_at <= end_date
+        )
+
+    if project:
+        query = query.filter(
+            JiraIssue.project.in_(project)
+        )
+
+    if issue_key:
+        query = query.filter(
+            JiraIssue.issue_key.in_(issue_key)
+        )
+
+    rows = query.all()
+    db.close()
+
+    results = []
+
+    for row in rows:
+        raw = row.raw_json
+
+        if not isinstance(raw, dict):
+            continue
+
+        results.append(raw)
+
+    return results
+
+def get_jira_projects():
+    db = SessionLocal()
+
+    rows = (
+        db.query(
+            JiraIssue.project
+        )
+        .filter(JiraIssue.project.isnot(None))
+        .distinct()
+        .all()
+    )
+
+    db.close()
+
+    return [
+        {"key": row.project}
+        for row in rows
+    ]

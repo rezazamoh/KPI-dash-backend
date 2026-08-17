@@ -34,7 +34,5 @@ JENKINS_URL = os.getenv("JENKINS_URL", "")
 JENKINS_USER = os.getenv("JENKINS_USER", "")
 JENKINS_TOKEN = os.getenv("JENKINS_TOKEN", "")
 
-# Jira (mock for now, real later)
 JIRA_URL = os.getenv("JIRA_URL", "")
-JIRA_USER = os.getenv("JIRA_USER", "")
-JIRA_PASSWORD = os.getenv("JIRA_PASSWORD", "")
+JIRA_TOKEN = os.getenv("JIRA_TOKEN", "")

@@ -9,10 +9,11 @@ from api.utils import load_changes
 from collectors.gerrit_ssh import ls_projects
 from collectors.gerrit_rest import enrich_reviewer_updates
 
-router = APIRouter()
+router = APIRouter(prefix="/gerrit", tags=["Gerrit"])
+
 
 @router.get("/developers")
-def developers(
+def gerrit_developers(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     live: bool | None = Query(True)
@@ -40,7 +41,7 @@ def developers(
     }
 
 @router.get("/developers/{username}")
-def developer(
+def gerrit_developer(
     username: str,
     repo: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
@@ -119,7 +120,7 @@ def developer(
     return response
 
 @router.get("/developers/{username}/topics")
-def developer_topics(
+def gerrit_developer_topics(
     username: str,
     repo: list[str] | None = Query(None),
     start_date: str | None = Query(None),
@@ -148,7 +149,7 @@ def developer_topics(
     }
 
 @router.get("/projects")
-def projects(
+def gerrit_projects(
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
     live: bool | None = Query(True)
@@ -174,7 +175,7 @@ def projects(
     }
 
 @router.get("/projects/{project:path}")
-def project(
+def gerrit_project(
     project: str,
     username: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
