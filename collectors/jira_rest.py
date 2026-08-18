@@ -80,6 +80,7 @@ def fetch_issues(
                     {
                         "startAt": start_at,
                         "maxResults": max_results,
+                        "fields": ISSUE_FIELDS,
                     },
                 )
 
