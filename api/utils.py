@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 from collectors.jira_rest import fetch_issues , fetch_boards , fetch_projects
 from collectors.gerrit_ssh import fetch_changes
-from database.crud import get_gerrit_changes, get_jira_issues , get_jira_projects 
+from database.crud import get_gerrit_changes, get_jira_issues, get_jira_projects
 
 
 def _parse_date(value: str):
@@ -65,6 +65,16 @@ def load_changes(
         topic=topic,
     )
 
+def load_jira_projects_list(live=False):
+    if live:
+        return fetch_projects()
+    return get_jira_projects()
+
+def load_boards_list(project=None, live=False):
+    if live:
+        return fetch_boards(project)
+    #return get_boards_projects
+
 def load_issues(
     project=None,
     boards=None,
@@ -89,33 +99,3 @@ def load_issues(
         start_date=start_date,
         end_date=end_date,
     )
-
-def load_issues_list(
-    project=None,
-    boards=None,
-    issue_key=None,
-    live=False,
-):
-    if live:
-        return fetch_issues_list(
-            project=project,
-            boards=boards,
-            issue_key=issue_key,
-        )
-
-    return get_jira_issues_list(
-        project=project,
-        boards=boards,
-        issue_key=issue_key,
-    )
-
-def load_projects(live=False):
-    if live:
-        return fetch_projects()
-
-    return get_jira_projects()
-
-
-def load_boards(project=None, live=False):
-    if live:
-        return fetch_boards(project)

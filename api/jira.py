@@ -3,9 +3,9 @@ from fastapi import APIRouter, HTTPException, Query
 from kpis.jira_kpis import (
     calculate_issue_metrics
 )
-from api.utils import load_issues, load_issues_list, load_boards , load_projects 
+from api.utils import load_issues, load_boards_list , load_jira_projects_list 
 
-router = APIRouter(prefix="/jira", tags=["Jira"])
+router = APIRouter(prefix="/api/jira", tags=["Jira"])
 
 
 # ============================================================
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/jira", tags=["Jira"])
 
 @router.get("/projects")
 def projects(live: bool = Query(True)):
-    projects = load_projects(live=live)
+    projects = load_jira_projects_list(live=live)
 
     return {
         "live": live,
@@ -27,7 +27,7 @@ def project_boards(
     project_key: str,
     live: bool = Query(True),
 ):
-    boards = load_boards(
+    boards = load_boards_list(
         project=project_key,
         live=live,
     )
@@ -36,26 +36,6 @@ def project_boards(
         "project": project_key,
         "live": live,
         "boards": boards,
-    }
-
-
-@router.get("/projects/{project_key}/issues")
-def project_issues(
-    project_key: str,
-    boards: list[int] | None = Query(None),
-    live: bool = Query(True),
-):
-    issues = load_issues_list(
-        project=project_key,
-        boards=boards,
-        live=live,
-    )
-
-    return {
-        "project": project_key,
-        "boards": boards,
-        "live": live,
-        "issues": issues,
     }
 # ============================================================
 # Project performance
@@ -122,7 +102,6 @@ def issues(
         "count": len(issues),
         "issues": issues,
     }
-
 
 # ============================================================
 # Individual issue

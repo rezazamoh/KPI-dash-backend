@@ -9,7 +9,7 @@ from api.utils import load_changes
 from collectors.gerrit_ssh import ls_projects
 from collectors.gerrit_rest import enrich_reviewer_updates
 
-router = APIRouter(prefix="/gerrit", tags=["Gerrit"])
+router = APIRouter(prefix="/api/gerrit", tags=["Gerrit"])
 
 
 @router.get("/developers")
