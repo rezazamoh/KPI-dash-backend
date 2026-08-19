@@ -353,6 +353,7 @@ def gerrit_team_performance(
     topic: list[str] | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
+    live: bool = Query(True),
 ):
     team = get_team(team_id)
 
@@ -383,44 +384,65 @@ def gerrit_team_performance(
             "projects": [],
         }
 
-    changes = load_changes(
+    owner_changes = load_changes(
         username=members,
         project=repo,
         topic=topic,
         start_date=start_date,
         end_date=end_date,
-        live=False,
+        live=live
+    )
+
+    reviewer_changes = load_changes(
+        reviewer=members,
+        project=repo,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live
+    )
+
+    commenter_changes = load_changes(
+        commenter=members,
+        project=repo,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=live
     )
 
     developers = sorted({
         (change.get("owner") or {}).get("username")
-        for change in changes
+        for change in owner_changes
         if (change.get("owner") or {}).get("username")
     })
 
     projects = sorted({
         change.get("project")
-        for change in changes
+        for change in owner_changes
         if change.get("project")
+    })
+
+    topics = sorted({
+        c.get("topic")
+        for c in owner_changes
+        if c.get("topic")
     })
 
     return {
         "team": serialize_team(team),
-
-        "snapshot_time": datetime.now(),
-
         "filters": {
-            "repo": repo,
-            "topic": topic,
+            "project": repo,
+            "topics": topic,
             "start_date": start_date,
             "end_date": end_date,
         },
-
         "developers": developers,
-
         "projects": projects,
-
-        "overall_performance": {
-            "change_count": len(changes),
-        },
+        "topics": topics,
+        "developer_metrics": project_developer_metrics(
+            owner_changes,
+            reviewer_changes,
+            commenter_changes,
+        ),
     }
