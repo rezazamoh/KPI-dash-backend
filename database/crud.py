@@ -1,9 +1,10 @@
 from datetime import datetime
 from database.db import SessionLocal
-
+from sqlalchemy.orm import selectinload
 from database.raw_models import (
     GerritChange,
-    JiraIssue
+    JiraIssue,
+    Team, TeamMember
 )
 
 from database.kpi_models import (
@@ -343,3 +344,151 @@ def get_jira_projects():
         {"key": row.project}
         for row in rows
     ]
+
+def create_team(name, members):
+    db = SessionLocal()
+
+    try:
+        existing = (
+            db.query(Team)
+            .filter(Team.name == name)
+            .first()
+        )
+
+        if existing:
+            return None
+
+        members = list(dict.fromkeys(members))
+
+        team = Team(name=name)
+
+        team.members = [
+            TeamMember(username=username)
+            for username in members
+        ]
+
+        db.add(team)
+        db.commit()
+
+        team = (
+            db.query(Team)
+            .options(selectinload(Team.members))
+            .filter(Team.id == team.id)
+            .first()
+        )
+
+        return team
+
+    finally:
+        db.close()
+
+def get_teams():
+    db = SessionLocal()
+
+    try:
+        return (
+            db.query(Team)
+            .options(selectinload(Team.members))
+            .order_by(Team.name)
+            .all()
+        )
+    finally:
+        db.close()
+
+
+def get_team(team_id):
+    db = SessionLocal()
+
+    try:
+        return (
+            db.query(Team)
+            .options(selectinload(Team.members))
+            .filter(Team.id == team_id)
+            .first()
+        )
+    finally:
+        db.close()
+
+
+def update_team(team_id, name=None, members=None):
+    db = SessionLocal()
+
+    try:
+        team = (
+            db.query(Team)
+            .filter(Team.id == team_id)
+            .first()
+        )
+
+        if not team:
+            return None
+
+        if name is not None:
+            existing = (
+                db.query(Team)
+                .filter(
+                    Team.name == name,
+                    Team.id != team_id,
+                )
+                .first()
+            )
+
+            if existing:
+                return "duplicate"
+
+            team.name = name
+
+        if members is not None:
+            new_members = set(members)
+
+            existing_members = {
+                member.username: member
+                for member in team.members
+            }
+
+            existing_names = set(existing_members.keys())
+
+            # Add new members
+            for username in new_members - existing_names:
+                team.members.append(
+                    TeamMember(username=username)
+                )
+
+            # Remove members that are no longer present
+            for username in existing_names - new_members:
+                db.delete(existing_members[username])
+
+        db.commit()
+
+        team = (
+            db.query(Team)
+            .options(selectinload(Team.members))
+            .filter(Team.id == team_id)
+            .first()
+        )
+
+        return team
+
+    finally:
+        db.close()
+        
+def delete_team(team_id):
+    db = SessionLocal()
+
+    try:
+        team = (
+            db.query(Team)
+            .filter(Team.id == team_id)
+            .first()
+        )
+
+        if not team:
+            return False
+
+        db.delete(team)
+        db.commit()
+
+        return True
+
+    finally:
+        db.close()

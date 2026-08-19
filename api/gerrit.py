@@ -9,8 +9,35 @@ from api.utils import load_changes
 from collectors.gerrit_ssh import ls_projects
 from collectors.gerrit_rest import enrich_reviewer_updates
 
-router = APIRouter(prefix="/api/gerrit", tags=["Gerrit"])
+from pydantic import BaseModel
+from database.crud import (
+    create_team,
+    get_teams,
+    get_team,
+    update_team,
+    delete_team,
+)
+class TeamCreate(BaseModel):
+    name: str
+    members: list[str]
 
+
+class TeamUpdate(BaseModel):
+    name: str | None = None
+    members: list[str] | None = None
+
+
+def serialize_team(team):
+    return {
+        "id": team.id,
+        "name": team.name,
+        "members": [
+            member.username
+            for member in team.members
+        ],
+    }
+
+router = APIRouter(prefix="/api/gerrit", tags=["Gerrit"])
 
 @router.get("/developers")
 def gerrit_developers(
@@ -239,4 +266,161 @@ def gerrit_project(
             reviewer_changes,
             commenter_changes,
         ),
+    }
+
+@router.get("/teams")
+def list_teams():
+    teams = get_teams()
+
+    return [
+        serialize_team(team)
+        for team in teams
+    ]
+
+@router.post("/teams")
+def create_team_api(data: TeamCreate):
+    team = create_team(
+        name=data.name,
+        members=data.members,
+    )
+
+    if team is None:
+        raise HTTPException(
+            status_code=409,
+            detail="A team with this name already exists.",
+        )
+
+    return serialize_team(team)
+
+@router.get("/teams/{team_id}")
+def get_team_api(team_id: int):
+    team = get_team(team_id)
+
+    if team is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Team not found.",
+        )
+
+    return serialize_team(team)
+
+
+@router.put("/teams/{team_id}")
+def update_team_api(
+    team_id: int,
+    data: TeamUpdate,
+):
+    team = update_team(
+        team_id=team_id,
+        name=data.name,
+        members=data.members,
+    )
+
+    if team is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Team not found.",
+        )
+
+    if team == "duplicate":
+        raise HTTPException(
+            status_code=409,
+            detail="A team with this name already exists.",
+        )
+
+    return serialize_team(team)
+
+
+@router.delete("/teams/{team_id}")
+def delete_team_api(team_id: int):
+    deleted = delete_team(team_id)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=404,
+            detail="Team not found.",
+        )
+
+    return {
+        "message": "Team deleted successfully.",
+        "team_id": team_id,
+    }
+
+@router.get("/teams/{team_id}/performance")
+def gerrit_team_performance(
+    team_id: int,
+    repo: list[str] | None = Query(None),
+    topic: list[str] | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+):
+    team = get_team(team_id)
+
+    if team is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Team not found.",
+        )
+
+    members = [
+        member.username
+        for member in team.members
+    ]
+
+    if not members:
+        return {
+            "team": serialize_team(team),
+            "filters": {
+                "repo": repo,
+                "topic": topic,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            "overall_performance": {
+                "change_count": 0,
+            },
+            "developers": [],
+            "projects": [],
+        }
+
+    changes = load_changes(
+        username=members,
+        project=repo,
+        topic=topic,
+        start_date=start_date,
+        end_date=end_date,
+        live=False,
+    )
+
+    developers = sorted({
+        (change.get("owner") or {}).get("username")
+        for change in changes
+        if (change.get("owner") or {}).get("username")
+    })
+
+    projects = sorted({
+        change.get("project")
+        for change in changes
+        if change.get("project")
+    })
+
+    return {
+        "team": serialize_team(team),
+
+        "snapshot_time": datetime.now(),
+
+        "filters": {
+            "repo": repo,
+            "topic": topic,
+            "start_date": start_date,
+            "end_date": end_date,
+        },
+
+        "developers": developers,
+
+        "projects": projects,
+
+        "overall_performance": {
+            "change_count": len(changes),
+        },
     }

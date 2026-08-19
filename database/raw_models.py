@@ -1,9 +1,9 @@
-from sqlalchemy import Column
-from sqlalchemy import String
-from sqlalchemy import Integer
 from sqlalchemy import DateTime
 from sqlalchemy import JSON
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import relationship
 
+from database import Base
 from database.db import Base
 
 class GerritChange(Base):
@@ -47,3 +47,43 @@ class JiraIssue(Base):
     resolved_at = Column(DateTime)
 
     raw_json = Column(JSON)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+
+    members = relationship(
+        "TeamMember",
+        back_populates="team",
+        cascade="all, delete-orphan",
+    )
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    team_id = Column(
+        Integer,
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    username = Column(String, nullable=False)
+
+    team = relationship(
+        "Team",
+        back_populates="members",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id",
+            "username",
+            name="uq_team_member",
+        ),
+    )
