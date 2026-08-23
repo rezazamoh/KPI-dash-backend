@@ -287,10 +287,13 @@ def ls_groups():
     ]
 
 
-def ls_members(group):
-    """Return usernames for a given Gerrit group."""
+def ls_members(group, recursive=False):
+    """Return members for a Gerrit group."""
 
     remote_cmd = f'gerrit ls-members "{group}"'
+
+    if recursive:
+        remote_cmd += " --recursive"
 
     cmd = [
         "ssh",
@@ -300,7 +303,7 @@ def ls_members(group):
         remote_cmd,
     ]
 
-    result = run_command(cmd, timeout=5)
+    result = run_command(cmd, timeout=30)
 
     if result is None:
         return []
@@ -310,7 +313,7 @@ def ls_members(group):
         print(f"[ERROR] stderr: {result.stderr}")
         return []
 
-    usernames = []
+    members = []
 
     for line in result.stdout.splitlines():
         line = line.strip()
@@ -321,13 +324,12 @@ def ls_members(group):
         fields = line.split("\t")
 
         if len(fields) >= 2:
-            usernames.append(fields[1].strip())
+            members.append(fields[1].strip())
 
-    return usernames
-
+    return members
 
 def all_members():
-    """Return a deduplicated list of all Gerrit members across all groups."""
+    """Return unique members from all Gerrit groups containing 'Developers'."""
 
     groups = ls_groups()
 
@@ -335,9 +337,18 @@ def all_members():
         print("[WARNING] No Gerrit groups found")
         return []
 
+    developer_groups = [
+        group for group in groups
+        if "developers" in group.lower()
+    ]
+
+    print(
+        f"[INFO] Found {len(developer_groups)} groups containing 'Developers'"
+    )
+
     members = set()
 
-    for group in groups:
+    for group in developer_groups:
         group_members = ls_members(group)
 
         print(
@@ -349,9 +360,10 @@ def all_members():
 
     result = sorted(members)
 
-    print(
-        f"[INFO] Found {len(result)} unique Gerrit members "
-        f"across {len(groups)} groups"
-    )
+    print()
+    print("=" * 60)
+    print(f"Developer groups scanned: {len(developer_groups)}")
+    print(f"Total unique members:      {len(result)}")
+    print("=" * 60)
 
     return result
