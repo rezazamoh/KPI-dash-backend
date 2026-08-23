@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.gerrit import router as gerrit_router
 from api.jira import router as jira_router
@@ -21,3 +22,19 @@ def root():
 
 app.include_router(gerrit_router)
 app.include_router(jira_router)
+
+@app.middleware("http")
+async def timing_middleware(request: Request, call_next):
+    start = time.perf_counter()
+
+    response = await call_next(request)
+
+    elapsed = time.perf_counter() - start
+
+    print(
+        f"{request.method} {request.url.path} "
+        f"-> {response.status_code} "
+        f"({elapsed:.3f}s)"
+    )
+
+    return response

@@ -7,6 +7,7 @@ DEFAULT_options = [
     "--all-reviewers",
     "--comments",
     "--patch-sets",
+    "--files",
     "--current-patch-set",
     "--submit-records",
 ]
@@ -111,6 +112,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     while True:
         cmd = [
             "ssh",
+            "-o", "StrictHostKeyChecking=accept-new",
             "-p", str(GERRIT_PORT),
             f"{GERRIT_USER}@{GERRIT_HOST}",
             "gerrit",
@@ -133,7 +135,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         else:
             print("[DEBUG] Query terms: ")
 
-        result = run_command(cmd, timeout=30)
+        result = run_command(cmd, timeout=15)
 
         if result is None:
             print("[ERROR] SSH command returned no result")
@@ -241,13 +243,14 @@ def ls_projects():
     """Return a list of Gerrit projects via SSH ls-projects."""
     cmd = [
         "ssh",
+        "-o", "StrictHostKeyChecking=accept-new",
         "-p", str(GERRIT_PORT),
         f"{GERRIT_USER}@{GERRIT_HOST}",
         "gerrit",
         "ls-projects",
     ]
 
-    result = run_command(cmd, timeout=30)
+    result = run_command(cmd, timeout=5)
     if result is None:
         return []
 
@@ -258,4 +261,97 @@ def ls_projects():
 
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
+def ls_groups():
+    """Return a list of Gerrit groups via SSH ls-groups."""
+    cmd = [
+        "ssh",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-p", str(GERRIT_PORT),
+        f"{GERRIT_USER}@{GERRIT_HOST}",
+        "gerrit ls-groups",
+    ]
 
+    result = run_command(cmd, timeout=5)
+    if result is None:
+        return []
+
+    if result.returncode != 0:
+        print(f"[ERROR] ls-groups failed with return code {result.returncode}")
+        print(f"[ERROR] stderr: {result.stderr}")
+        return []
+
+    return [
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip()
+    ]
+
+
+def ls_members(group):
+    """Return usernames for a given Gerrit group."""
+
+    remote_cmd = f'gerrit ls-members "{group}"'
+
+    cmd = [
+        "ssh",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-p", str(GERRIT_PORT),
+        f"{GERRIT_USER}@{GERRIT_HOST}",
+        remote_cmd,
+    ]
+
+    result = run_command(cmd, timeout=5)
+
+    if result is None:
+        return []
+
+    if result.returncode != 0:
+        print(f"[ERROR] ls-members failed for '{group}'")
+        print(f"[ERROR] stderr: {result.stderr}")
+        return []
+
+    usernames = []
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+
+        if not line:
+            continue
+
+        fields = line.split("\t")
+
+        if len(fields) >= 2:
+            usernames.append(fields[1].strip())
+
+    return usernames
+
+
+def all_members():
+    """Return a deduplicated list of all Gerrit members across all groups."""
+
+    groups = ls_groups()
+
+    if not groups:
+        print("[WARNING] No Gerrit groups found")
+        return []
+
+    members = set()
+
+    for group in groups:
+        group_members = ls_members(group)
+
+        print(
+            f"[INFO] Group '{group}': "
+            f"{len(group_members)} members"
+        )
+
+        members.update(group_members)
+
+    result = sorted(members)
+
+    print(
+        f"[INFO] Found {len(result)} unique Gerrit members "
+        f"across {len(groups)} groups"
+    )
+
+    return result

@@ -6,9 +6,8 @@ from kpis.gerrit_kpis import (
     project_developer_metrics,
 )
 from api.utils import load_changes
-from collectors.gerrit_ssh import ls_projects
+from collectors.gerrit_ssh import ls_projects , all_members
 from collectors.gerrit_rest import enrich_reviewer_updates
-
 from pydantic import BaseModel
 from database.crud import (
     create_team,
@@ -45,25 +44,10 @@ def gerrit_developers(
     end_date: str | None = Query(None),
     live: bool | None = Query(True)
 ):
-    changes = load_changes(
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-        options=[]
-    )
 
-    devs = sorted({
-            (c.get("owner") or {}).get("username")
-            for c in changes
-            if (c.get("owner") or {}).get("username")
-        })
+    devs = all_members()
     
     return {
-        "filters": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "live": live
-        },
         "developers": devs
     }
 

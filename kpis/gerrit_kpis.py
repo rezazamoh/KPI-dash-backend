@@ -90,8 +90,12 @@ def _changes_by_status_per_repo(changes):
 def _average_patchsets(changes):
     if not changes:
         return 0
+
     return round(
-        mean(len(c.get("patchSets", [])) for c in changes),
+        mean(
+            c.get("currentPatchSet", {}).get("number", 0)
+            for c in changes
+        ),
         2
     )
 
@@ -502,6 +506,9 @@ def developer_snapshot_metrics(
 
         "build_failure_rate":
             build_failure_rate(dev_changes),
+
+        "file_hotspots":
+            hotspot_files(dev_changes),
     }    
 
 def developer_performance_grouped(
@@ -619,3 +626,60 @@ def split_changes_for_developer(changes, username):
         reviewer_changes,
         commenter_changes,
     )
+
+def hotspot_files(changes, limit=10):
+    files = defaultdict(
+        lambda: {
+            "change_count": 0,
+            "patchset_count": 0,
+            "lines_added": 0,
+            "lines_deleted": 0,
+            "_changes": set(),
+        }
+    )
+
+    for change in changes:
+        change_id = change.get("id")
+
+        for patchset in change.get("patchSets", []):
+            for file_info in patchset.get("files", []):
+                filename = file_info.get("file")
+
+                if not filename:
+                    continue
+
+                entry = files[filename]
+
+                # This file appeared in this patchset
+                entry["patchset_count"] += 1
+
+                # Track unique Gerrit changes
+                if change_id not in entry["_changes"]:
+                    entry["_changes"].add(change_id)
+                    entry["change_count"] += 1
+
+                entry["lines_added"] += (
+                    file_info.get("insertions") or 0
+                )
+
+                entry["lines_deleted"] += abs(
+                    file_info.get("deletions") or 0
+                )
+
+    result = []
+
+    for filename, metrics in files.items():
+        result.append({
+            "file": filename,
+            "change_count": metrics["change_count"],
+            "patchset_count": metrics["patchset_count"],
+            "lines_added": metrics["lines_added"],
+            "lines_deleted": metrics["lines_deleted"],
+        })
+
+    result.sort(
+        key=lambda item: item["change_count"],
+        reverse=True,
+    )
+
+    return result[:limit]
