@@ -539,30 +539,3 @@ def delete_team(team_id):
 
     finally:
         db.close()
-
-def refresh_catalog(db: Session):
-    developers = all_members()
-    projects = get_projects()
-    teams = get_teams()
-
-    # Replace existing entries
-    db.query(Developer).delete()
-    db.query(Project).delete()
-    db.query(Team).delete()
-
-    for username in developers:
-        db.add(Developer(username=username))
-
-    for name in projects:
-        db.add(Project(name=name))
-
-    for name in teams:
-        db.add(Team(name=name))
-
-    db.commit()
-
-    return {
-        "developers": developers,
-        "projects": projects,
-        "teams": teams,
-    }
