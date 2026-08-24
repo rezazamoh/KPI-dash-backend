@@ -15,7 +15,12 @@ from database.crud import (
     get_team,
     update_team,
     delete_team,
+    get_devs,
+    update_devs,
+    get_projects,
+    update_projects,
 )
+
 class TeamCreate(BaseModel):
     name: str
     members: list[str]
@@ -24,7 +29,6 @@ class TeamCreate(BaseModel):
 class TeamUpdate(BaseModel):
     name: str | None = None
     members: list[str] | None = None
-
 
 def serialize_team(team):
     return {
@@ -40,16 +44,14 @@ router = APIRouter(prefix="/api/gerrit", tags=["Gerrit"])
 
 @router.get("/developers")
 def gerrit_developers(
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
     live: bool | None = Query(True)
 ):
-
-    devs = all_members()
+    if live:
+        devs = all_members()
+        update_devs(devs)
+        return {"developers": devs}
     
-    return {
-        "developers": devs
-    }
+    return {"developers": get_devs()}
 
 @router.get("/developers/{username}")
 def gerrit_developer(
@@ -161,29 +163,14 @@ def gerrit_developer_topics(
 
 @router.get("/projects")
 def gerrit_projects(
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
     live: bool | None = Query(True)
 ):
-    if live and not start_date and not end_date:
-        projects = sorted(ls_projects())
-    else:
-        changes = load_changes(
-            start_date=start_date,
-            end_date=end_date,
-            live=live,
-            options=[]
-        )
-        projects = sorted({c.get("project") for c in changes if c.get("project")})
-
-    return {
-        "filters": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "live": live
-        },
-        "projects": projects
-    }
+    if live:
+        projects = ls_projects()
+        update_projects(projects)
+        return {"projects": projects}
+    
+    return {"projects": get_projects()}
 
 @router.get("/projects/{project:path}")
 def gerrit_project(

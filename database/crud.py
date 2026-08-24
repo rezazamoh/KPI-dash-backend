@@ -4,7 +4,8 @@ from sqlalchemy.orm import selectinload
 from database.raw_models import (
     GerritChange,
     JiraIssue,
-    Team, TeamMember
+    Team, TeamMember,
+    Dev,Project
 )
 
 from database.kpi_models import (
@@ -395,10 +396,56 @@ def get_teams():
     finally:
         db.close()
 
+def get_devs():
+    db = SessionLocal()
+    try:
+        return (
+            row.username
+            for row in db.query(Dev)
+            .order_by(Dev.username)
+            .all()
+        )
+    finally:
+        db.close()
+
+def update_devs(developers: list[str]):
+    db = SessionLocal()
+    try:
+        db.query(Dev).delete()
+
+        for username in developers:
+            db.add(Dev(username=username))
+
+        db.commit()
+    finally:
+            db.close()
+
+def get_projects():
+    db = SessionLocal()
+    try:
+        return (
+            row.name
+            for row in db.query(Project)
+            .order_by(Project.name)
+            .all()
+        )
+    finally:
+        db.close()
+
+def update_projects(projects: list[str]):
+    db = SessionLocal()
+    try:
+        db.query(Project).delete()
+
+        for name in projects:
+            db.add(Project(name=name))
+
+        db.commit()
+    finally:
+            db.close()
 
 def get_team(team_id):
     db = SessionLocal()
-
     try:
         return (
             db.query(Team)
@@ -492,3 +539,30 @@ def delete_team(team_id):
 
     finally:
         db.close()
+
+def refresh_catalog(db: Session):
+    developers = all_members()
+    projects = get_projects()
+    teams = get_teams()
+
+    # Replace existing entries
+    db.query(Developer).delete()
+    db.query(Project).delete()
+    db.query(Team).delete()
+
+    for username in developers:
+        db.add(Developer(username=username))
+
+    for name in projects:
+        db.add(Project(name=name))
+
+    for name in teams:
+        db.add(Team(name=name))
+
+    db.commit()
+
+    return {
+        "developers": developers,
+        "projects": projects,
+        "teams": teams,
+    }

@@ -220,3 +220,4 @@ __marimo__/
 data/
 test.py
 ssh-key/
+metrics.db

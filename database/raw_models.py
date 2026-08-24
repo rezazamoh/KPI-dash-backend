@@ -48,7 +48,6 @@ class JiraIssue(Base):
 
     raw_json = Column(JSON)
 
-
 class Team(Base):
     __tablename__ = "teams"
 
@@ -60,7 +59,6 @@ class Team(Base):
         back_populates="team",
         cascade="all, delete-orphan",
     )
-
 
 class TeamMember(Base):
     __tablename__ = "team_members"
@@ -87,3 +85,15 @@ class TeamMember(Base):
             name="uq_team_member",
         ),
     )
+
+class Dev(Base):
+    __tablename__ = "gerrit_developers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+
+class Project(Base):
+    __tablename__ = "gerrit_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False, index=True)
