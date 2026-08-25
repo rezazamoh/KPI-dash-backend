@@ -30,6 +30,30 @@ class TeamUpdate(BaseModel):
     name: str | None = None
     members: list[str] | None = None
 
+def parse_periods(periods: list[str] | None):
+    if not periods:
+        return [(None, None)]
+
+    result = []
+
+    for period in periods:
+        parts = period.split(",")
+
+        if len(parts) != 2:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid period '{period}'. Expected start,end.",
+            )
+
+        start, end = parts
+
+        result.append((
+            start.strip() or None,
+            end.strip() or None,
+        ))
+
+    return result
+
 def serialize_team(team):
     return {
         "id": team.id,
@@ -58,79 +82,86 @@ def gerrit_developer(
     username: str,
     repo: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
+    periods: list[str] | None = Query(None),
     group_by_repo: bool = Query(False),
     group_by_topic: bool = Query(False),
     live: bool = Query(True),
 ):
+    results = []
 
-    owner_changes = load_changes(
-        username=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
+    for start_date, end_date in parse_periods(periods):
 
-    reviewer_changes = load_changes(
-        reviewer=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
-    if live:
-        reviewer_changes = enrich_reviewer_updates(reviewer_changes)
-
-    commenter_changes = load_changes(
-        commenter=username,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
-
-    response = {
-        "username": username,
-        "snapshot_time": datetime.now(),
-        "live": live,
-        "filters": {
-            "repo": repo,
-            "topic": topic,
-            "start_date": start_date,
-            "end_date": end_date,
-        },
-        "overall_performance": developer_snapshot_metrics(
-            username,
-            dev_changes=owner_changes,
-            reviewer_changes=reviewer_changes,
-            commenter_changes=commenter_changes,
-        ),
-    }
-
-    if group_by_repo:
-        response["grouped_by_repo"] = developer_performance_grouped(
+        owner_changes = load_changes(
             username=username,
-            dev_changes=owner_changes,
-            reviewer_changes=reviewer_changes,
-            commenter_changes=commenter_changes,
-            group_by="project",
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
         )
 
-    if group_by_topic:
-        response["grouped_by_topic"] = developer_performance_grouped(
-            username=username,
-            dev_changes=owner_changes,
-            reviewer_changes=reviewer_changes,
-            commenter_changes=commenter_changes,
-            group_by="topic",
+        reviewer_changes = load_changes(
+            reviewer=username,
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
         )
 
-    return response
+        if live:
+            reviewer_changes = enrich_reviewer_updates(reviewer_changes)
+
+        commenter_changes = load_changes(
+            commenter=username,
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
+
+        metrics = {
+            "username": username,
+            "snapshot_time": datetime.now(),
+            "live": live,
+            "filters": {
+                "repo": repo,
+                "topic": topic,
+            },
+            "overall_performance": developer_snapshot_metrics(
+                username,
+                dev_changes=owner_changes,
+                reviewer_changes=reviewer_changes,
+                commenter_changes=commenter_changes,
+            ),
+        }
+
+        if group_by_repo:
+            metrics["grouped_by_repo"] = developer_performance_grouped(
+                username=username,
+                dev_changes=owner_changes,
+                reviewer_changes=reviewer_changes,
+                commenter_changes=commenter_changes,
+                group_by="project",
+            )
+
+        if group_by_topic:
+            metrics["grouped_by_topic"] = developer_performance_grouped(
+                username=username,
+                dev_changes=owner_changes,
+                reviewer_changes=reviewer_changes,
+                commenter_changes=commenter_changes,
+                group_by="topic",
+            )
+
+        results.append({
+            "start": start_date,
+            "end": end_date,
+            "metrics": metrics,
+        })
+
+    return results
 
 @router.get("/developers/{username}/topics")
 def gerrit_developer_topics(
@@ -177,67 +208,75 @@ def gerrit_project(
     project: str,
     username: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
+    periods: list[str] | None = Query(None),
     live: bool = Query(True),
 ):
+    results = []
 
-    owner_changes = load_changes(
-        username=username,
-        project=project,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
+    for start_date, end_date in parse_periods(periods):
 
-    reviewer_changes = load_changes(
-        reviewer=username,
-        project=project,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
+        owner_changes = load_changes(
+            username=username,
+            project=project,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
 
-    commenter_changes = load_changes(
-        commenter=username,
-        project=project,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live,
-    )
+        reviewer_changes = load_changes(
+            reviewer=username,
+            project=project,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
 
-    developers = sorted({
-        (c.get("owner") or {}).get("username")
-        for c in owner_changes
-        if (c.get("owner") or {}).get("username")
-    })
+        commenter_changes = load_changes(
+            commenter=username,
+            project=project,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
 
-    topics = sorted({
-        c.get("topic")
-        for c in owner_changes
-        if c.get("topic")
-    })
+        developers = sorted({
+            (c.get("owner") or {}).get("username")
+            for c in owner_changes
+            if (c.get("owner") or {}).get("username")
+        })
 
-    return {
-        "filters": {
-            "project": project,
-            "developers": username,
-            "topics": topic,
-            "start_date": start_date,
-            "end_date": end_date,
-            "live": live,
-        },
-        "developers": developers,
-        "topics": topics,
-        "developer_metrics": project_developer_metrics(
-            owner_changes,
-            reviewer_changes,
-            commenter_changes,
-        ),
-    }
+        topics = sorted({
+            c.get("topic")
+            for c in owner_changes
+            if c.get("topic")
+        })
+
+        metrics = {
+            "filters": {
+                "project": project,
+                "developers": username,
+                "topics": topic,
+                "live": live,
+            },
+            "developers": developers,
+            "topics": topics,
+            "developer_metrics": project_developer_metrics(
+                owner_changes,
+                reviewer_changes,
+                commenter_changes,
+            ),
+        }
+
+        results.append({
+            "start": start_date,
+            "end": end_date,
+            "metrics": metrics,
+        })
+
+    return results
 
 @router.get("/teams")
 def list_teams():
@@ -322,8 +361,7 @@ def gerrit_team_performance(
     team_id: int,
     repo: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
-    start_date: str | None = Query(None),
-    end_date: str | None = Query(None),
+    periods: list[str] | None = Query(None),
     live: bool = Query(True),
 ):
     team = get_team(team_id)
@@ -339,81 +377,100 @@ def gerrit_team_performance(
         for member in team.members
     ]
 
-    if not members:
-        return {
+    results = []
+
+    for start_date, end_date in parse_periods(periods):
+
+        if not members:
+            metrics = {
+                "team": serialize_team(team),
+                "filters": {
+                    "repo": repo,
+                    "topic": topic,
+                    "live": live,
+                },
+                "overall_performance": {
+                    "change_count": 0,
+                },
+                "developers": [],
+                "projects": [],
+                "topics": [],
+            }
+
+            results.append({
+                "start": start_date,
+                "end": end_date,
+                "metrics": metrics,
+            })
+
+            continue
+
+        owner_changes = load_changes(
+            username=members,
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
+
+        reviewer_changes = load_changes(
+            reviewer=members,
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
+
+        commenter_changes = load_changes(
+            commenter=members,
+            project=repo,
+            topic=topic,
+            start_date=start_date,
+            end_date=end_date,
+            live=live,
+        )
+
+        developers = sorted({
+            (change.get("owner") or {}).get("username")
+            for change in owner_changes
+            if (change.get("owner") or {}).get("username")
+        })
+
+        projects = sorted({
+            change.get("project")
+            for change in owner_changes
+            if change.get("project")
+        })
+
+        topics = sorted({
+            change.get("topic")
+            for change in owner_changes
+            if change.get("topic")
+        })
+
+        metrics = {
             "team": serialize_team(team),
             "filters": {
-                "repo": repo,
-                "topic": topic,
-                "start_date": start_date,
-                "end_date": end_date,
+                "project": repo,
+                "topics": topic,
+                "live": live,
             },
-            "overall_performance": {
-                "change_count": 0,
-            },
-            "developers": [],
-            "projects": [],
+            "developers": developers,
+            "projects": projects,
+            "topics": topics,
+            "developer_metrics": project_developer_metrics(
+                owner_changes,
+                reviewer_changes,
+                commenter_changes,
+            ),
         }
 
-    owner_changes = load_changes(
-        username=members,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live
-    )
+        results.append({
+            "start": start_date,
+            "end": end_date,
+            "metrics": metrics,
+        })
 
-    reviewer_changes = load_changes(
-        reviewer=members,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live
-    )
-
-    commenter_changes = load_changes(
-        commenter=members,
-        project=repo,
-        topic=topic,
-        start_date=start_date,
-        end_date=end_date,
-        live=live
-    )
-
-    developers = sorted({
-        (change.get("owner") or {}).get("username")
-        for change in owner_changes
-        if (change.get("owner") or {}).get("username")
-    })
-
-    projects = sorted({
-        change.get("project")
-        for change in owner_changes
-        if change.get("project")
-    })
-
-    topics = sorted({
-        c.get("topic")
-        for c in owner_changes
-        if c.get("topic")
-    })
-
-    return {
-        "team": serialize_team(team),
-        "filters": {
-            "project": repo,
-            "topics": topic,
-            "start_date": start_date,
-            "end_date": end_date,
-        },
-        "developers": developers,
-        "projects": projects,
-        "topics": topics,
-        "developer_metrics": project_developer_metrics(
-            owner_changes,
-            reviewer_changes,
-            commenter_changes,
-        ),
-    }
+    return results

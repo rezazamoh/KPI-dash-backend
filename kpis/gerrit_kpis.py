@@ -645,7 +645,7 @@ def hotspot_files(changes, limit=10):
             for file_info in patchset.get("files", []):
                 filename = file_info.get("file")
 
-                if not filename:
+                if not filename or filename == "/COMMIT_MSG":
                     continue
 
                 entry = files[filename]
