@@ -584,6 +584,7 @@ def summarize_change_metrics(developer: str, changeset: ChangeSet) -> dict:
 
     return {
         "change_count": len(dev_changes),
+        "changes_reviewed": len(reviewer_changes),
         "average_patchsets": _average_patchsets(dev_changes),
         "review_requests_sent": _review_requests_sent(reviewer_changes, developer),
         "review_requests_received": _review_requests_received(dev_changes),
