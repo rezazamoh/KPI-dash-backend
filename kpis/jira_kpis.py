@@ -153,19 +153,17 @@ def calculate_issue_metrics(issues):
 
         # Issue age
         if created:
-            age_days = (
-                now - created
-            ).total_seconds() / 86400
+            age = (now - created).total_seconds()
 
-            ages.append(age_days)
+            ages.append(age)
 
         # Resolution time
         if created and resolution_date:
-            resolution_days = (
+            resolution_time = (
                 resolution_date - created
-            ).total_seconds() / 86400
+            ).total_seconds()
 
-            resolution_times.append(resolution_days)
+            resolution_times.append(resolution_time)
 
     # -------------------------
     # Derived metrics
@@ -217,13 +215,13 @@ def calculate_issue_metrics(issues):
             2,
         ),
 
-        "average_issue_age_days": (
+        "average_issue_age": (
             round(average_age, 2)
             if average_age is not None
             else None
         ),
 
-        "average_resolution_time_days": (
+        "average_resolution_time": (
             round(average_resolution_time, 2)
             if average_resolution_time is not None
             else None

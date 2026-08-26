@@ -22,4 +22,4 @@ def average_build_duration(builds):
     if not durations:
         return 0
 
-    return sum(durations) / len(durations) / 60000
+    return sum(durations) / len(durations)

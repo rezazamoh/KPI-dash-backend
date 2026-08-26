@@ -259,7 +259,7 @@ def ls_projects():
         print(f"[ERROR] stderr: {result.stderr}")
         return []
 
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return [line.strip() for line in result.stdout.splitlines() if line.strip() and "template" not in line.strip().lower()]
 
 def ls_groups():
     """Return a list of Gerrit groups via SSH ls-groups."""
