@@ -359,7 +359,8 @@ def delete_team_api(team_id: int):
 @router.get("/teams/{team_id}/performance")
 def gerrit_team_performance(
     team_id: int,
-    repo: list[str] | None = Query(None),
+    username: list[str] | None = Query(None),
+    project: list[str] | None = Query(None),
     topic: list[str] | None = Query(None),
     periods: list[str] | None = Query(None),
     live: bool = Query(True),
@@ -372,10 +373,13 @@ def gerrit_team_performance(
             detail="Team not found.",
         )
 
-    members = [
-        member.username
-        for member in team.members
-    ]
+    if username:
+        members = username
+    else:
+        members = [
+            member.username
+            for member in team.members
+        ]
 
     results = []
 
@@ -385,7 +389,7 @@ def gerrit_team_performance(
             metrics = {
                 "team": serialize_team(team),
                 "filters": {
-                    "repo": repo,
+                    "repo": project,
                     "topic": topic,
                     "live": live,
                 },
@@ -407,7 +411,7 @@ def gerrit_team_performance(
 
         owner_changes = load_changes(
             username=members,
-            project=repo,
+            project=project,
             topic=topic,
             start_date=start_date,
             end_date=end_date,
@@ -416,7 +420,7 @@ def gerrit_team_performance(
 
         reviewer_changes = load_changes(
             reviewer=members,
-            project=repo,
+            project=project,
             topic=topic,
             start_date=start_date,
             end_date=end_date,
@@ -425,7 +429,7 @@ def gerrit_team_performance(
 
         commenter_changes = load_changes(
             commenter=members,
-            project=repo,
+            project=project,
             topic=topic,
             start_date=start_date,
             end_date=end_date,
@@ -453,7 +457,7 @@ def gerrit_team_performance(
         metrics = {
             "team": serialize_team(team),
             "filters": {
-                "project": repo,
+                "project": project,
                 "topics": topic,
                 "live": live,
             },
