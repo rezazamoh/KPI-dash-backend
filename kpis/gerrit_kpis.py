@@ -59,10 +59,30 @@ class ChangeSet(NamedTuple):
 # Low-level stat helpers
 # ---------------------------------------------------------------------------
 
-def _people_stats(counter: dict, change_counts: list) -> dict:
+def _people_stats(
+    counter: dict,
+    change_counts: list,
+    by_person_label: dict | None = None,
+) -> dict:
     """
-    Turn a {username: count} counter (plus optional per-change counts)
-    into a ranked people list with min/mean/max stats.
+    Turn a {username: count} counter into a ranked people list.
+
+    Existing fields are preserved:
+        people[].username
+        people[].count
+        stats.per_person
+        stats.per_change
+
+    Additional review-analysis fields:
+        people[].by_label
+        stats.by_label
+
+    `stats.by_label` contains both label-level rates and vote-value
+    distributions. The label `rate` is relative to all review votes.
+    Each vote value has:
+        - total: number of occurrences
+        - rate: percentage of all review votes
+        - value_rate: percentage within that label
     """
 
     if not counter:
@@ -71,17 +91,22 @@ def _people_stats(counter: dict, change_counts: list) -> dict:
             "stats": None,
         }
 
-    people = [
-        {
+    people = []
+
+    for username, count in sorted(
+        counter.items(),
+        key=lambda x: x[1],
+        reverse=True,
+    ):
+        person = {
             "username": username,
             "count": count,
         }
-        for username, count in sorted(
-            counter.items(),
-            key=lambda x: x[1],
-            reverse=True,
-        )
-    ]
+
+        if by_person_label and username in by_person_label:
+            person["by_label"] = by_person_label[username]
+
+        people.append(person)
 
     person_values = list(counter.values())
 
@@ -99,6 +124,61 @@ def _people_stats(counter: dict, change_counts: list) -> dict:
             "mean": round(mean(change_counts), 2),
             "max": max(change_counts),
         }
+
+    # Aggregate review votes across all people.
+    if by_person_label:
+        aggregate_labels = {}
+
+        for person_labels in by_person_label.values():
+            for label, label_stats in person_labels.items():
+                aggregate = aggregate_labels.setdefault(
+                    label,
+                    {
+                        "total": 0,
+                        "values": defaultdict(int),
+                    },
+                )
+
+                aggregate["total"] += label_stats["total"]
+
+                for value, count in label_stats["values"].items():
+                    aggregate["values"][value] += count
+
+        total_reviews = sum(
+            label_stats["total"]
+            for label_stats in aggregate_labels.values()
+        )
+
+        stats["by_label"] = {}
+
+        for label, label_stats in aggregate_labels.items():
+            label_total = label_stats["total"]
+
+            stats["by_label"][label] = {
+                "total": label_total,
+                "rate": round(
+                    label_total / total_reviews * 100,
+                    2,
+                ) if total_reviews else 0,
+                "values": {
+                    value: {
+                        "total": count,
+                        "rate": round(
+                            count / total_reviews * 100,
+                            2,
+                        ) if total_reviews else 0,
+                        "value_rate": round(
+                            count / label_total * 100,
+                            2,
+                        ) if label_total else 0,
+                    }
+                    for value, count in sorted(
+                        label_stats["values"].items(),
+                        key=lambda x: int(x[0]),
+                        reverse=True,
+                    )
+                },
+            }
 
     return {
         "people": people,
@@ -361,38 +441,206 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
         },
     }
 
+def _review_vote_stats(change: dict, username: str) -> dict:
+    """
+    Extract review label/vote activity made by `username` from change
+    comments.
+
+    Expected comment format:
+
+        Patch Set 3: Code-Review+2
+        Patch Set 4: Code-Review-1 Verified+1
+
+    Returns:
+
+        {
+            "Code-Review": {
+                "total": 2,
+                "positive": 1,
+                "negative": 1,
+                "values": {
+                    "2": 1,
+                    "-1": 1,
+                },
+            }
+        }
+    """
+
+    by_label = {}
+
+    for comment in change.get("comments", []):
+        reviewer = comment.get("reviewer")
+
+        if not isinstance(reviewer, dict):
+            continue
+
+        if reviewer.get("username") != username:
+            continue
+
+        first_line = comment.get("message", "").split("\n")[0].strip()
+
+        if not _HEADER_PATTERN.match(first_line):
+            continue
+
+        for label, vote in _VOTE_PATTERN.findall(first_line):
+            vote_value = int(vote)
+
+            if vote_value not in VALID_VOTE_VALUES:
+                continue
+
+            label_stats = by_label.setdefault(
+                label,
+                {
+                    "total": 0,
+                    "positive": 0,
+                    "negative": 0,
+                    "values": defaultdict(int),
+                },
+            )
+
+            label_stats["total"] += 1
+            label_stats["values"][str(vote_value)] += 1
+
+            if vote_value > 0:
+                label_stats["positive"] += 1
+            else:
+                label_stats["negative"] += 1
+
+    for label_stats in by_label.values():
+        label_stats["values"] = dict(label_stats["values"])
+
+    return by_label
+
+def _merge_person_label_stats(target: dict, source: dict) -> None:
+    """Merge label-level vote statistics into a person's existing stats."""
+
+    for label, source_stats in source.items():
+        target_stats = target.setdefault(
+            label,
+            {
+                "total": 0,
+                "positive": 0,
+                "negative": 0,
+                "values": defaultdict(int),
+            },
+        )
+
+        target_stats["total"] += source_stats["total"]
+        target_stats["positive"] += source_stats["positive"]
+        target_stats["negative"] += source_stats["negative"]
+
+        for value, count in source_stats["values"].items():
+            target_stats["values"][value] += count
+
+
+def _finalize_person_label_stats(by_person_label: dict) -> None:
+    """Convert defaultdict instances to normal dicts for JSON output."""
+
+    for person_labels in by_person_label.values():
+        for label_stats in person_labels.values():
+            label_stats["values"] = dict(label_stats["values"])
+
+
 def _review_requests_received(dev_changes: list) -> dict:
+    """
+    Analyze reviews received on changes owned by the developer.
+
+    Existing semantics are preserved:
+        people[].count = number of changes on which the reviewer appears
+                         in allReviewers.
+
+    Additional data:
+        people[].by_label = actual approval/vote activity by that reviewer.
+    """
+
     change_review_counts = []
     reviewers = defaultdict(int)
+    by_person_label = defaultdict(dict)
 
     for change in dev_changes:
-        count = 0
         owner = _normalize_owner(change)
+        change_reviewers = set()
 
         for reviewer in change.get("allReviewers", []):
+            if not isinstance(reviewer, dict):
+                continue
+
             username = reviewer.get("username")
 
-            if not username or username == owner or username in EXCLUDED_USERNAMES:
+            if (
+                not username
+                or username == owner
+                or username in EXCLUDED_USERNAMES
+            ):
                 continue
 
             reviewers[username] += 1
-            count += 1
+            change_reviewers.add(username)
 
-        change_review_counts.append(count)
+        for username in change_reviewers:
+            label_stats = _review_vote_stats(change, username)
 
-    return _people_stats(reviewers, change_review_counts)
+            if label_stats:
+                _merge_person_label_stats(
+                    by_person_label[username],
+                    label_stats,
+                )
+
+        change_review_counts.append(len(change_reviewers))
+
+    _finalize_person_label_stats(by_person_label)
+
+    return _people_stats(
+        reviewers,
+        change_review_counts,
+        by_person_label,
+    )
 
 
-def _review_requests_sent(reviewer_changes: list, developer: str) -> dict:
+def _review_requests_sent(
+    reviewer_changes: list,
+    developer: str,
+) -> dict:
+    """
+    Analyze reviews sent by `developer`.
+
+    Existing semantics are preserved:
+        people[].count = number of changes owned by that developer
+                         that were reviewed by the current developer.
+
+    Additional data:
+        people[].by_label = actual approval/vote activity made by the
+                            current developer on that owner's changes.
+    """
+
     reviewer_changes = reviewer_changes or []
+
     owners = defaultdict(int)
+    by_person_label = defaultdict(dict)
+
     for change in reviewer_changes:
         owner = _normalize_owner(change)
 
-        if owner != developer:
-            owners[owner] += 1
+        if not owner or owner == developer:
+            continue
 
-    return _people_stats(owners, [])
+        owners[owner] += 1
+
+        label_stats = _review_vote_stats(change, developer)
+
+        if label_stats:
+            _merge_person_label_stats(
+                by_person_label[owner],
+                label_stats,
+            )
+
+    _finalize_person_label_stats(by_person_label)
+
+    return _people_stats(
+        owners,
+        [],
+        by_person_label,
+    )
 
 
 def _comments_received(dev_changes: list) -> dict:
