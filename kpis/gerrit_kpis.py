@@ -293,6 +293,73 @@ def _average_patchsets(changes: list):
         2
     )
 
+def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
+    """
+    Calculate time between consecutive patchsets uploaded by the developer.
+
+    For each change, its patchsets are sorted by creation time and the gap
+    (in seconds) between each patchset and the next is recorded. Returns the
+    min/mean/max gap across all changes, or None if no change has >= 2
+    patchsets with a creation timestamp.
+
+    Args:
+        changes: Developer's changes.
+        debug: If True, include the min/max change URLs for verification.
+    """
+
+    gaps = []
+
+    for change in changes:
+        patchsets = change.get("patchSets", [])
+
+        if not isinstance(patchsets, list) or not patchsets:
+            continue
+
+        ts_list = sorted(
+            ps.get("createdOn")
+            for ps in patchsets
+            if isinstance(ps, dict) and ps.get("createdOn")
+        )
+
+        if len(ts_list) < 2:
+            continue
+
+        for prev, curr in zip(ts_list, ts_list[1:]):
+            gaps.append(
+                {
+                    "duration": curr - prev,
+                    "url": change.get("url"),
+                    "change_number": change.get("number"),
+                }
+            )
+
+    if not gaps:
+        return None
+
+    gaps.sort(key=lambda x: x["duration"])
+
+    values = [x["duration"] for x in gaps]
+
+    if not debug:
+        return {
+            "min": round(values[0], 2),
+            "mean": round(mean(values), 2),
+            "max": round(values[-1], 2),
+        }
+
+    return {
+        "min": {
+            "duration": round(gaps[0]["duration"], 2),
+            "url": gaps[0]["url"],
+            "change_number": gaps[0]["change_number"],
+        },
+        "mean": round(mean(values), 2),
+        "max": {
+            "duration": round(gaps[-1]["duration"], 2),
+            "url": gaps[-1]["url"],
+            "change_number": gaps[-1]["change_number"],
+        },
+    }
 
 def _review_requests_received(dev_changes: list) -> dict:
     change_review_counts = []
@@ -586,6 +653,7 @@ def summarize_change_metrics(developer: str, changeset: ChangeSet) -> dict:
         "change_count": len(dev_changes),
         "changes_reviewed": len(reviewer_changes),
         "average_patchsets": _average_patchsets(dev_changes),
+        "patchset_gap_time": _patchset_gap_time(dev_changes, debug=True),
         "review_requests_sent": _review_requests_sent(reviewer_changes, developer),
         "review_requests_received": _review_requests_received(dev_changes),
         "comments_sent": _comments_sent(commenter_changes, developer),

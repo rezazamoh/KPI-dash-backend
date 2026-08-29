@@ -1,3 +1,4 @@
+import logs
 from datetime import datetime, timedelta
 from collectors.gerrit_ssh import fetch_changes , fetch_changes_from_json
 from database.crud import upsert_gerrit_change
