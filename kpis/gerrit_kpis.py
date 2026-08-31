@@ -7,8 +7,9 @@ Structure:
     - Gerrit-domain parsing:  extracting owner/timestamps/votes from raw change dicts
     - Aggregation/orchestration: building per-developer / per-project snapshots
 """
-
-from collections import defaultdict
+import math
+from bisect import bisect_right
+from collections import defaultdict , Counter
 from datetime import datetime
 from statistics import mean
 from typing import NamedTuple, Optional
@@ -373,14 +374,91 @@ def _average_patchsets(changes: list):
         2
     )
 
+def _compute_duration_buckets(values: list, max_buckets: int = 7) -> list:
+    """
+    Derive bucket edges from an actual set of duration values (seconds).
+
+    Uses logarithmic binning, since durations like patchset/review gaps
+    span seconds to weeks and are heavily right-skewed - equal-width bins
+    would dump almost everything into one bucket. Bin count is chosen via
+    Sturges' rule, capped so the resulting chart stays readable regardless
+    of how many data points there are.
+
+    Returns a list of (min_seconds, max_seconds) tuples, sorted ascending
+    and covering the full range of values. The final bucket's max is
+    always inf.
+    """
+
+    n = len(values)
+
+    if n == 0:
+        return []
+
+    lo = min(values)
+    hi = max(values)
+
+    if lo == hi:
+        return [(lo, float("inf"))]
+
+    num_bins = min(max_buckets, max(3, math.ceil(math.log2(n)) + 1))
+
+    # +1 shift keeps log() defined for zero-second gaps.
+    log_lo = math.log(lo + 1)
+    log_hi = math.log(hi + 1)
+    step = (log_hi - log_lo) / num_bins
+
+    edges = [
+        math.exp(log_lo + step * i) - 1
+        for i in range(1, num_bins + 1)
+    ]
+    edges[-1] = float("inf")
+
+    buckets = []
+    prev_edge = lo
+    for edge in edges:
+        buckets.append((prev_edge, edge))
+        prev_edge = edge
+
+    return buckets
+
+
+def _bucket_index(duration: float, buckets: list) -> int:
+    upper_bounds = [b[1] for b in buckets]
+    return min(bisect_right(upper_bounds, duration), len(buckets) - 1)
+
+
+def _duration_distribution(values: list) -> list:
+    """Bucket duration values (seconds) into a chart-ready distribution."""
+
+    buckets = _compute_duration_buckets(values)
+    bucket_counts = Counter(_bucket_index(v, buckets) for v in values)
+
+    distribution = []
+
+    for i, (b_min, b_max) in enumerate(buckets):
+        count = bucket_counts.get(i, 0)
+
+        distribution.append(
+            {
+                "min": round(b_min, 2),
+                "max": round(b_max, 2) if b_max != float("inf") else None,
+                "count": count,
+                "density": count,
+            }
+        )
+
+    return distribution
+
+
 def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
     """
     Calculate time between consecutive patchsets uploaded by the developer.
 
     For each change, its patchsets are sorted by creation time and the gap
     (in seconds) between each patchset and the next is recorded. Returns the
-    min/mean/max gap across all changes, or None if no change has >= 2
-    patchsets with a creation timestamp.
+    min/mean/max gap across all changes, plus a bucketed distribution of
+    gap counts and densities with buckets derived from the data itself, or
+    None if no change has >= 2 patchsets with a creation timestamp.
 
     Args:
         changes: Developer's changes.
@@ -420,11 +498,14 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in gaps]
 
+    distribution = _duration_distribution(values)
+
     if not debug:
         return {
             "min": round(values[0], 2),
             "mean": round(mean(values), 2),
             "max": round(values[-1], 2),
+            "distribution": distribution,
         }
 
     return {
@@ -439,8 +520,8 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
             "url": gaps[-1]["url"],
             "change_number": gaps[-1]["change_number"],
         },
+        "distribution": distribution,
     }
-
 def _review_vote_stats(change: dict, username: str) -> dict:
     """
     Extract review label/vote activity made by `username` from change
@@ -769,6 +850,10 @@ def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
     Calculate lead time (change creation -> merge) as a raw timestamp
     difference.
 
+    Returns the min/mean/max lead time across merged changes, plus a
+    bucketed distribution of lead-time counts with buckets derived from
+    the data itself.
+
     Args:
         changes: Developer's changes.
         debug: If True, include the min/max change URLs for verification.
@@ -805,11 +890,14 @@ def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in lead_times]
 
+    distribution = _duration_distribution(values)
+
     if not debug:
         return {
             "min": round(values[0], 2),
             "mean": round(mean(values), 2),
             "max": round(values[-1], 2),
+            "distribution": distribution,
         }
 
     return {
@@ -824,6 +912,7 @@ def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
             "url": lead_times[-1]["url"],
             "change_number": lead_times[-1]["change_number"],
         },
+        "distribution": distribution,
     }
 
 
