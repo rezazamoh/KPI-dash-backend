@@ -60,6 +60,12 @@ class Team(Base):
         cascade="all, delete-orphan",
     )
 
+    projects = relationship(
+        "TeamDefaultProject",
+        back_populates="team",
+        cascade="all, delete-orphan",
+    )
+
 class TeamMember(Base):
     __tablename__ = "team_members"
 
@@ -97,3 +103,31 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False, index=True)
+    
+class TeamDefaultProject(Base):
+    __tablename__ = "team_default_projects"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    team_id = Column(
+        Integer,
+        ForeignKey("teams.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    project_id = Column(
+        Integer,
+        ForeignKey("gerrit_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    team = relationship("Team", back_populates="projects")
+    project = relationship("Project")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id",
+            "project_id",
+            name="uq_team_default_project",
+        ),
+    )

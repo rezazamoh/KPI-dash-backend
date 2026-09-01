@@ -24,11 +24,13 @@ from database.crud import (
 class TeamCreate(BaseModel):
     name: str
     members: list[str]
+    projects: list[str] = []
 
 
 class TeamUpdate(BaseModel):
     name: str | None = None
     members: list[str] | None = None
+    projects: list[str] | None = None
 
 def parse_periods(periods: list[str] | None):
     if not periods:
@@ -61,6 +63,11 @@ def serialize_team(team):
         "members": [
             member.username
             for member in team.members
+        ],
+        "projects": [
+            link.project.name
+            for link in team.projects
+            if link.project is not None
         ],
     }
 
@@ -292,6 +299,7 @@ def create_team_api(data: TeamCreate):
     team = create_team(
         name=data.name,
         members=data.members,
+        projects=data.projects,
     )
 
     if team is None:
@@ -324,6 +332,7 @@ def update_team_api(
         team_id=team_id,
         name=data.name,
         members=data.members,
+        projects=data.projects,
     )
 
     if team is None:

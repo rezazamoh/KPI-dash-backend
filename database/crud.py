@@ -4,7 +4,7 @@ from sqlalchemy.orm import selectinload
 from database.raw_models import (
     GerritChange,
     JiraIssue,
-    Team, TeamMember,
+    Team, TeamMember,TeamDefaultProject,
     Dev,Project
 )
 
@@ -346,7 +346,7 @@ def get_jira_projects():
         for row in rows
     ]
 
-def create_team(name, members):
+def create_team(name, members, projects=None):
     db = SessionLocal()
 
     try:
@@ -360,6 +360,7 @@ def create_team(name, members):
             return None
 
         members = list(dict.fromkeys(members))
+        projects = list(dict.fromkeys(projects or []))
 
         team = Team(name=name)
 
@@ -368,12 +369,30 @@ def create_team(name, members):
             for username in members
         ]
 
+        if projects:
+            project_rows = (
+                db.query(Project)
+                .filter(Project.name.in_(projects))
+                .all()
+            )
+
+            found_names = {p.name for p in project_rows}
+            missing = set(projects) - found_names
+            if missing:
+                raise ValueError(f"Unknown projects: {sorted(missing)}")
+
+            team.projects = [
+                TeamDefaultProject(project_id=project_row.id)
+                for project_row in project_rows
+            ]
+
         db.add(team)
         db.commit()
 
         team = (
             db.query(Team)
             .options(selectinload(Team.members))
+            .options(selectinload(Team.projects).selectinload(TeamDefaultProject.project))
             .filter(Team.id == team.id)
             .first()
         )
@@ -389,7 +408,10 @@ def get_teams():
     try:
         return (
             db.query(Team)
-            .options(selectinload(Team.members))
+            .options(
+                selectinload(Team.members),
+                selectinload(Team.projects).selectinload(TeamDefaultProject.project),
+            )
             .order_by(Team.name)
             .all()
         )
@@ -449,7 +471,10 @@ def get_team(team_id):
     try:
         return (
             db.query(Team)
-            .options(selectinload(Team.members))
+            .options(
+                selectinload(Team.members),
+                selectinload(Team.projects).selectinload(TeamDefaultProject.project),
+            )
             .filter(Team.id == team_id)
             .first()
         )
@@ -457,7 +482,7 @@ def get_team(team_id):
         db.close()
 
 
-def update_team(team_id, name=None, members=None):
+def update_team(team_id, name=None, members=None, projects=None):
     db = SessionLocal()
 
     try:
@@ -495,21 +520,56 @@ def update_team(team_id, name=None, members=None):
 
             existing_names = set(existing_members.keys())
 
-            # Add new members
             for username in new_members - existing_names:
                 team.members.append(
                     TeamMember(username=username)
                 )
 
-            # Remove members that are no longer present
             for username in existing_names - new_members:
                 db.delete(existing_members[username])
+
+        if projects is not None:
+            new_project_names = set(projects)
+
+            existing_links = {
+                link.project.name: link
+                for link in team.projects
+            }
+
+            existing_project_names = set(existing_links.keys())
+
+            names_to_add = new_project_names - existing_project_names
+            if names_to_add:
+                project_rows = (
+                    db.query(Project)
+                    .filter(Project.name.in_(names_to_add))
+                    .all()
+                )
+
+                found_names = {p.name for p in project_rows}
+                missing = names_to_add - found_names
+                if missing:
+                    # decide policy: raise, skip, or auto-create
+                    raise ValueError(f"Unknown projects: {missing}")
+
+                for project_row in project_rows:
+                    team.projects.append(
+                        TeamDefaultProject(project_id=project_row.id)
+                    )
+
+            for name_to_remove in existing_project_names - new_project_names:
+                db.delete(existing_links[name_to_remove])
 
         db.commit()
 
         team = (
             db.query(Team)
-            .options(selectinload(Team.members))
+            .options(
+                selectinload(Team.members),
+                selectinload(Team.projects).selectinload(
+                    TeamDefaultProject.project
+                ),
+            )
             .filter(Team.id == team_id)
             .first()
         )
@@ -518,7 +578,6 @@ def update_team(team_id, name=None, members=None):
 
     finally:
         db.close()
-        
 def delete_team(team_id):
     db = SessionLocal()
 
