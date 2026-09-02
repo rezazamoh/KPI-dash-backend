@@ -39,6 +39,7 @@ def load_changes(
     commenter=None,     # str | list[str]
     project=None,       # str | list[str]
     topic=None,         # str | list[str]
+    status=None,        # str | list[str]
     options=None,
 ):
     parsed_start, parsed_end = parse_date_range(start_date, end_date)
@@ -52,6 +53,7 @@ def load_changes(
             commenter=commenter,
             project=project,
             topic=topic,
+            status=status,
             options=options,
         )
 
@@ -63,6 +65,7 @@ def load_changes(
         commenter=commenter,
         project=project,
         topic=topic,
+        status=status,
     )
 
 def load_jira_projects_list(live=False):

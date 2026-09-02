@@ -427,22 +427,53 @@ def _bucket_index(duration: float, buckets: list) -> int:
     return min(bisect_right(upper_bounds, duration), len(buckets) - 1)
 
 
-def _duration_distribution(values: list) -> list:
+def _duration_distribution(values: list, items: list | None = None) -> list:
     """Bucket duration values (seconds) into a chart-ready distribution."""
 
     buckets = _compute_duration_buckets(values)
-    bucket_counts = Counter(_bucket_index(v, buckets) for v in values)
+    bucket_counts = Counter()
+    bucket_change_numbers = defaultdict(list)
+    bucket_change_patchsets = defaultdict(list)
+
+    if items is None:
+        bucket_counts.update(_bucket_index(v, buckets) for v in values)
+    else:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            duration = item.get("duration")
+            if duration is None:
+                continue
+
+            bucket_index = _bucket_index(duration, buckets)
+            bucket_counts[bucket_index] += 1
+
+            change_number = item.get("change_number")
+            if change_number is not None:
+                bucket_change_numbers[bucket_index].append(change_number)
+
+            change_patchset = item.get("change_patchset")
+            if change_patchset is not None:
+                bucket_change_patchsets[bucket_index].append({
+                    "change_number": change_number,
+                    "patchset_number": change_patchset,
+                })
 
     distribution = []
 
     for i, (b_min, b_max) in enumerate(buckets):
         count = bucket_counts.get(i, 0)
+        change_numbers = bucket_change_numbers.get(i, [])
+        change_patchsets = bucket_change_patchsets.get(i, [])
 
         distribution.append(
             {
                 "min": round(b_min, 2),
                 "max": round(b_max, 2) if b_max != float("inf") else None,
                 "count": count,
+                "change_numbers": change_numbers,
+                "change_patchsets": change_patchsets,
                 "density": count,
             }
         )
@@ -473,21 +504,28 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
         if not isinstance(patchsets, list) or not patchsets:
             continue
 
-        ts_list = sorted(
-            ps.get("createdOn")
+        patchsets_with_timestamps = sorted(
+            (
+                ps.get("createdOn"),
+                ps.get("number"),
+            )
             for ps in patchsets
             if isinstance(ps, dict) and ps.get("createdOn")
         )
 
-        if len(ts_list) < 2:
+        if len(patchsets_with_timestamps) < 2:
             continue
 
-        for prev, curr in zip(ts_list, ts_list[1:]):
+        for prev, curr in zip(
+            patchsets_with_timestamps,
+            patchsets_with_timestamps[1:],
+        ):
             gaps.append(
                 {
-                    "duration": curr - prev,
+                    "duration": curr[0] - prev[0],
                     "url": change.get("url"),
                     "change_number": change.get("number"),
+                    "change_patchset": curr[1],
                 }
             )
 
@@ -498,7 +536,7 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in gaps]
 
-    distribution = _duration_distribution(values)
+    distribution = _duration_distribution(values, gaps)
 
     if not debug:
         return {
@@ -890,7 +928,7 @@ def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in lead_times]
 
-    distribution = _duration_distribution(values)
+    distribution = _duration_distribution(values, lead_times)
 
     if not debug:
         return {

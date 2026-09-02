@@ -67,6 +67,7 @@ def get_gerrit_changes(
     commenter=None,
     project=None,
     topic=None,
+    status=None,
 ):
     """
     Get Gerrit changes from the database with optional filters.
@@ -98,6 +99,7 @@ def get_gerrit_changes(
     reviewer = _as_list(reviewer)
     project = _as_list(project)
     topic = _as_list(topic)
+    status = _as_list(status)
 
     if start_date is not None:
         query = query.filter(GerritChange.updated_at >= start_date)
@@ -107,6 +109,8 @@ def get_gerrit_changes(
         query = query.filter(GerritChange.owner.in_(owner))
     if project:
         query = query.filter(GerritChange.project.in_(project))
+    if status:
+        query = query.filter(GerritChange.status.in_(status))
 
     rows = query.all()
     db.close()
@@ -123,6 +127,10 @@ def get_gerrit_changes(
             change_topic = raw.get("topic") or "untagged"
 
             if change_topic not in topic:
+                continue
+
+        if status:
+            if raw.get("status") not in status:
                 continue
 
         if reviewer:

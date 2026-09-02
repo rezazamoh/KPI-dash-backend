@@ -32,7 +32,7 @@ def run_command(cmd, timeout=30):
         return None
 
 
-def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, options=None):
+def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
@@ -42,6 +42,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         owner (str, optional): Gerrit owner username filter.
         project (str, optional): Gerrit project filter.
         topic (str, optional): Gerrit topic filter.
+        status (str | list[str], optional): Gerrit status filter such as NEW, MERGED, ABANDONED.
     
     Returns:
         list: List of parsed change objects with raw JSON
@@ -93,6 +94,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     add_query_terms(query_terms, "commentby", commenter)
     add_query_terms(query_terms, "project", project)
     add_query_terms(query_terms, "topic", topic)
+    add_query_terms(query_terms, "status", status)
 
     if not query_terms:
         fallback_end = datetime.now()
