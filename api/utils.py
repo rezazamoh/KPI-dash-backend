@@ -40,6 +40,7 @@ def load_changes(
     project=None,       # str | list[str]
     topic=None,         # str | list[str]
     status=None,        # str | list[str]
+    issue=None,         # str | list[str]
     options=None,
 ):
     parsed_start, parsed_end = parse_date_range(start_date, end_date)
@@ -54,6 +55,7 @@ def load_changes(
             project=project,
             topic=topic,
             status=status,
+            issue=issue,
             options=options,
         )
 

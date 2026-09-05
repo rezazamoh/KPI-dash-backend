@@ -32,7 +32,7 @@ def run_command(cmd, timeout=30):
         return None
 
 
-def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, options=None):
+def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, issue=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
@@ -95,6 +95,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     add_query_terms(query_terms, "project", project)
     add_query_terms(query_terms, "topic", topic)
     add_query_terms(query_terms, "status", status)
+    add_query_terms(query_terms, "message", issue)
 
     if not query_terms:
         fallback_end = datetime.now()
