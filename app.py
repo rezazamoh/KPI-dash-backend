@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.gerrit import router as gerrit_router
 from api.jira import router as jira_router
+from api.settings import router as settings_router
 
 app = FastAPI()
 app.add_middleware(
@@ -23,6 +24,7 @@ def root():
 
 app.include_router(gerrit_router)
 app.include_router(jira_router)
+app.include_router(settings_router)
 
 @app.middleware("http")
 async def timing_middleware(request: Request, call_next):

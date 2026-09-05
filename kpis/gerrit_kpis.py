@@ -14,6 +14,7 @@ from datetime import datetime
 from statistics import mean
 from typing import NamedTuple, Optional
 import re
+from database.crud import get_app_settings
 
 
 # ---------------------------------------------------------------------------
@@ -427,10 +428,62 @@ def _bucket_index(duration: float, buckets: list) -> int:
     return min(bisect_right(upper_bounds, duration), len(buckets) - 1)
 
 
-def _duration_distribution(values: list, items: list | None = None) -> list:
+def _configured_duration_buckets(duration_windows: list[dict]) -> list:
+    buckets = []
+
+    for window in duration_windows:
+        minimum = window.get("min")
+        maximum = window.get("max")
+
+        if minimum is not None and minimum < 0:
+            raise ValueError("Duration window min must be a non-negative number")
+
+        if maximum is not None and minimum is not None and minimum >= maximum:
+            raise ValueError("Duration window min must be less than max")
+
+        buckets.append((
+            minimum if minimum is not None else float("-inf"),
+            maximum if maximum is not None else float("inf"),
+        ))
+
+    if not buckets:
+        raise ValueError("Duration windows must not be empty")
+
+    if buckets[0][0] != float("-inf") and buckets[0][0] != 0:
+        raise ValueError("The first duration window min must be 0 or open")
+
+    for previous, current in zip(buckets, buckets[1:]):
+        if current[0] < previous[1]:
+            raise ValueError("Duration windows must not overlap")
+
+    if any(bucket[1] == float("inf") for bucket in buckets[:-1]):
+        raise ValueError("Only the final duration window may be open-ended")
+
+    return buckets
+
+
+def _duration_distribution(
+    values: list,
+    items: list | None = None,
+) -> list:
     """Bucket duration values (seconds) into a chart-ready distribution."""
 
-    buckets = _compute_duration_buckets(values)
+    settings = get_app_settings()
+    duration_windows = (
+        settings["duration_windows"]
+        if settings["use_duration_windows"] is not False
+        else None
+    )
+
+    buckets = (
+        _compute_duration_buckets(values)
+        if not duration_windows
+        else _configured_duration_buckets(duration_windows)
+    )
+
+    if not buckets:
+        return []
+
     bucket_counts = Counter()
     bucket_change_numbers = defaultdict(list)
     bucket_change_patchsets = defaultdict(list)
@@ -469,7 +522,7 @@ def _duration_distribution(values: list, items: list | None = None) -> list:
 
         distribution.append(
             {
-                "min": round(b_min, 2),
+                "min": round(b_min, 2) if b_min != float("-inf") else None,
                 "max": round(b_max, 2) if b_max != float("inf") else None,
                 "count": count,
                 "change_numbers": change_numbers,
@@ -481,7 +534,10 @@ def _duration_distribution(values: list, items: list | None = None) -> list:
     return distribution
 
 
-def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
+def _patchset_gap_time(
+    changes: list,
+    debug: bool = False,
+) -> Optional[dict]:
     """
     Calculate time between consecutive patchsets uploaded by the developer.
 
@@ -536,7 +592,10 @@ def _patchset_gap_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in gaps]
 
-    distribution = _duration_distribution(values, gaps)
+    distribution = _duration_distribution(
+        values,
+        gaps,
+    )
 
     if not debug:
         return {
@@ -883,7 +942,10 @@ def reviewer_response_time(changes: list, username: str) -> Optional[dict]:
     }
 
 
-def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
+def _lead_time(
+    changes: list,
+    debug: bool = False,
+) -> Optional[dict]:
     """
     Calculate lead time (change creation -> merge) as a raw timestamp
     difference.
@@ -928,7 +990,10 @@ def _lead_time(changes: list, debug: bool = False) -> Optional[dict]:
 
     values = [x["duration"] for x in lead_times]
 
-    distribution = _duration_distribution(values, lead_times)
+    distribution = _duration_distribution(
+        values,
+        lead_times,
+    )
 
     if not debug:
         return {
@@ -1016,7 +1081,10 @@ def hotspot_files(changes: list, limit: int = 10) -> list:
 # Orchestration
 # ---------------------------------------------------------------------------
 
-def summarize_change_metrics(developer: str, changeset: ChangeSet) -> dict:
+def summarize_change_metrics(
+    developer: str,
+    changeset: ChangeSet,
+) -> dict:
     """
     The subset of a developer snapshot that doesn't need grouping/repo
     breakdowns or file hotspots. Used standalone, and as the base that
@@ -1028,12 +1096,18 @@ def summarize_change_metrics(developer: str, changeset: ChangeSet) -> dict:
         "change_count": len(dev_changes),
         "changes_reviewed": len(reviewer_changes),
         "average_patchsets": _average_patchsets(dev_changes),
-        "patchset_gap_time": _patchset_gap_time(dev_changes, debug=True),
+        "patchset_gap_time": _patchset_gap_time(
+            dev_changes,
+            debug=True,
+        ),
         "review_requests_sent": _review_requests_sent(reviewer_changes, developer),
         "review_requests_received": _review_requests_received(dev_changes),
         "comments_sent": _comments_sent(commenter_changes, developer),
         "comments_received": _comments_received(dev_changes),
-        "lead_time": _lead_time(dev_changes, debug=True),
+        "lead_time": _lead_time(
+            dev_changes,
+            debug=True,
+        ),
         "build_failure_rate": build_failure_rate(dev_changes),
     }
 

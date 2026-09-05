@@ -34,6 +34,7 @@ It is designed for teams that want to monitor Gerrit review activity, code revie
 - Live Gerrit query support via SSH
 - Offline querying via persisted database records
 - FastAPI endpoints for developer and project metrics
+- Frontend-configurable duration windows for KPI distributions
 - Snapshot persistence for developer and team KPI data
 
 ## System Architecture
@@ -188,6 +189,8 @@ http://127.0.0.1:8000/docs
 | `/developers/{username}/topics` | GET | List all topics of a specific developer | `repo`, `start_date`, `end_date`,`live` |
 | `/projects` | GET | List all projects available in the selected dataset | `start_date`, `end_date`, `live` |
 | `/projects/{project:path}` | GET | Project-level developer metrics for a specific project | `username`, `topic`, `start_date`, `end_date`, `live` |
+| `/api/settings` | GET | Read global KPI display settings | none |
+| `/api/settings` | PATCH | Update global KPI display settings | JSON body |
 
 ### Parameter behavior
 
@@ -195,6 +198,20 @@ http://127.0.0.1:8000/docs
 - `repo`, `username`, and `topic` may be provided as repeated query parameters (e.g. looking up a developer's performance through several repos).
 - `live=true` forces Gerrit SSH query execution instead of SQLite lookups.
 - `group_by_repo` and `group_by_topic` flags are used to see developers performance separated by repos or topics along side the overall performance. 
+- `duration_windows` controls lead-time and patchset-gap distributions. Set `use_duration_windows` to `false` to temporarily use automatic bucketing without deleting the saved windows. The first `min` and final `max` may be `null` for open-ended ranges.
+
+Example settings body:
+
+```json
+{
+	"use_duration_windows": true,
+	"duration_windows": [
+		{"min": 0, "max": 3600},
+		{"min": 3600, "max": 86400},
+		{"min": 86400, "max": null}
+	]
+}
+```
 
 ## KPI Overview
 

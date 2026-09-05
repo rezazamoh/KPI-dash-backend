@@ -10,8 +10,74 @@ from database.raw_models import (
 
 from database.kpi_models import (
     DeveloperSnapshot,
-    TeamSnapshot
+    TeamSnapshot,
+    AppSettings,
 )
+
+_UNSET = object()
+
+
+def get_app_settings():
+    db = SessionLocal()
+
+    try:
+        settings = db.get(AppSettings, 1)
+
+        if settings is None:
+            return {
+                "duration_windows": None,
+                "use_duration_windows": True,
+            }
+
+        return {
+            "duration_windows": settings.duration_windows,
+            "use_duration_windows": settings.use_duration_windows,
+        }
+    finally:
+        db.close()
+
+
+def update_app_settings(
+    duration_windows=_UNSET,
+    use_duration_windows=None,
+):
+    db = SessionLocal()
+
+    try:
+        settings = db.get(AppSettings, 1)
+
+        if settings is None:
+            settings = AppSettings(
+                id=1,
+                duration_windows=(
+                    None
+                    if duration_windows is _UNSET
+                    else duration_windows
+                ),
+                use_duration_windows=(
+                    True
+                    if use_duration_windows is None
+                    else use_duration_windows
+                ),
+            )
+            db.add(settings)
+        else:
+            if duration_windows is not _UNSET:
+                settings.duration_windows = duration_windows
+
+            if use_duration_windows is not None:
+                settings.use_duration_windows = use_duration_windows
+
+        db.commit()
+        db.refresh(settings)
+
+        return {
+            "duration_windows": settings.duration_windows,
+            "use_duration_windows": settings.use_duration_windows,
+            "updated_at": settings.updated_at,
+        }
+    finally:
+        db.close()
 
 def upsert_gerrit_change(change):
     """
