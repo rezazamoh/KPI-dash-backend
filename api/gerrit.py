@@ -248,7 +248,11 @@ def gerrit_project(
             end_date=end_date,
             live=live,
         )
-
+        """ 
+        if live:
+            reviewer_changes = enrich_reviewer_updates(reviewer_changes)
+        """
+            
         commenter_changes = load_changes(
             commenter=username,
             project=project,
@@ -449,6 +453,10 @@ def gerrit_team_performance(
             live=live,
         )
 
+        """        
+        if live:
+        reviewer_changes = enrich_reviewer_updates(reviewer_changes)
+        """
         commenter_changes = load_changes(
             commenter=members,
             project=project,
