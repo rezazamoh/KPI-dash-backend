@@ -12,11 +12,11 @@ changes = get_gerrit_changes()
 # Get distinct developers from changes
 developers = set()
 for change in changes:
-    author = change.get("author", {})
-    if isinstance(author, dict):
-        username = author.get("username")
+    owner = change.get("owner", {})
+    if isinstance(owner, dict):
+        username = owner.get("username")
     else:
-        username = str(author)
+        username = str(owner)
     if username and username != "unknown":
         developers.add(username)
 

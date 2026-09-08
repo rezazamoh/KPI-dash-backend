@@ -94,7 +94,7 @@ def upsert_gerrit_change(change):
         change["id"]
     )
 
-    owner_username = change["author"].get("username", "unknown") if isinstance(change["author"], dict) else str(change["author"])
+    owner_username = change["owner"].get("username", "unknown") if isinstance(change["owner"], dict) else str(change["owner"])
     change_number = change.get("number")
     created_at = datetime.fromtimestamp(change.get("createdOn")) if change.get("createdOn") else None
     updated_at = datetime.fromtimestamp(change.get("lastUpdated")) if change.get("lastUpdated") else None
@@ -103,7 +103,7 @@ def upsert_gerrit_change(change):
     if existing:
         existing.change_number = change_number
         existing.project = change.get("project")
-        existing.author = owner_username
+        existing.owner = owner_username
         existing.status = change.get("status")
         existing.created_at = created_at
         existing.updated_at = updated_at
@@ -114,7 +114,7 @@ def upsert_gerrit_change(change):
                 change_id=change["id"],
                 change_number=change_number,
                 project=change.get("project"),
-                author=owner_username,
+                owner=owner_username,
                 status=change.get("status"),
                 created_at=created_at,
                 updated_at=updated_at,
@@ -128,7 +128,7 @@ def upsert_gerrit_change(change):
 def get_gerrit_changes(
     start_date=None,
     end_date=None,
-    author=None,
+    owner=None,
     reviewer=None,
     commenter=None,
     project=None,
@@ -141,7 +141,7 @@ def get_gerrit_changes(
     Args:
         start_date (datetime, optional): Filter by updated_at >= start_date.
         end_date (datetime, optional): Filter by updated_at <= end_date.
-        author (str, optional): Filter by Gerrit author username.
+        owner (str, optional): Filter by Gerrit owner username.
         project (str, optional): Filter by Gerrit project.
         topic (str, optional): Filter by Gerrit topic.
 
@@ -161,7 +161,7 @@ def get_gerrit_changes(
     db = SessionLocal()
     query = db.query(GerritChange)
 
-    author = _as_list(author)
+    owner = _as_list(owner)
     reviewer = _as_list(reviewer)
     project = _as_list(project)
     topic = _as_list(topic)
@@ -171,8 +171,8 @@ def get_gerrit_changes(
         query = query.filter(GerritChange.updated_at >= start_date)
     if end_date is not None:
         query = query.filter(GerritChange.updated_at <= end_date)
-    if author:
-        query = query.filter(GerritChange.author.in_(author))
+    if owner:
+        query = query.filter(GerritChange.owner.in_(owner))
     if project:
         query = query.filter(GerritChange.project.in_(project))
     if status:

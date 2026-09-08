@@ -19,7 +19,7 @@ class GerritChange(Base):
 
     project = Column(String)
 
-    author = Column(String, index=True)
+    owner = Column(String, index=True)
 
     status = Column(String)
 

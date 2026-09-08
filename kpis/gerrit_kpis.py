@@ -4,7 +4,7 @@ Gerrit change/review analytics.
 Structure:
     - Constants:            shared literals (excluded usernames, statuses, CI labels)
     - Low-level stat helpers: generic aggregation over counters/values
-    - Gerrit-domain parsing:  extracting author/timestamps/votes from raw change dicts
+    - Gerrit-domain parsing:  extracting owner/timestamps/votes from raw change dicts
     - Aggregation/orchestration: building per-developer / per-project snapshots
 """
 import math
@@ -193,12 +193,12 @@ def _people_stats(
 # ---------------------------------------------------------------------------
 
 def _normalize_owner(change: dict) -> Optional[str]:
-    author = change.get("author")
+    owner = change.get("owner")
 
-    if isinstance(author, dict):
-        return author.get("username") or author.get("name")
+    if isinstance(owner, dict):
+        return owner.get("username") or owner.get("name")
 
-    return author
+    return owner
 
 
 def _reviewer_added_ts(change: dict, username: str) -> Optional[int]:
@@ -736,7 +736,7 @@ def _review_requests_received(dev_changes: list) -> dict:
     by_person_label = defaultdict(dict)
 
     for change in dev_changes:
-        author = _normalize_owner(change)
+        owner = _normalize_owner(change)
         change_reviewers = set()
 
         for reviewer in change.get("allReviewers", []):
@@ -747,7 +747,7 @@ def _review_requests_received(dev_changes: list) -> dict:
 
             if (
                 not username
-                or username == author
+                or username == owner
                 or username in EXCLUDED_USERNAMES
             ):
                 continue
@@ -788,7 +788,7 @@ def _review_requests_sent(
 
     Additional data:
         people[].by_label = actual approval/vote activity made by the
-                            current developer on that author's changes.
+                            current developer on that owner's changes.
     """
 
     reviewer_changes = reviewer_changes or []
@@ -797,18 +797,18 @@ def _review_requests_sent(
     by_person_label = defaultdict(dict)
 
     for change in reviewer_changes:
-        author = _normalize_owner(change)
+        owner = _normalize_owner(change)
 
-        if not author or author == developer:
+        if not owner or owner == developer:
             continue
 
-        owners[author] += 1
+        owners[owner] += 1
 
         label_stats = _review_vote_stats(change, developer)
 
         if label_stats:
             _merge_person_label_stats(
-                by_person_label[author],
+                by_person_label[owner],
                 label_stats,
             )
 
@@ -826,7 +826,7 @@ def _comments_received(dev_changes: list) -> dict:
     change_comment_counts = []
 
     for change in dev_changes:
-        author = _normalize_owner(change)
+        owner = _normalize_owner(change)
         count = 0
         for comment in change.get("comments", []):
             reviewer = comment.get("reviewer")
@@ -836,7 +836,7 @@ def _comments_received(dev_changes: list) -> dict:
 
             username = reviewer.get("username")
 
-            if not username or username == author or username in EXCLUDED_USERNAMES:
+            if not username or username == owner or username in EXCLUDED_USERNAMES:
                 continue
 
             commenters[username] += 1
@@ -850,9 +850,9 @@ def _comments_sent(commenter_changes: list, developer: str) -> dict:
     commenter_changes = commenter_changes or []
     owners = defaultdict(int)
     for change in commenter_changes:
-        author = _normalize_owner(change)
+        owner = _normalize_owner(change)
 
-        if author == developer:
+        if owner == developer:
             continue
 
         for comment in change.get("comments", []):
@@ -866,7 +866,7 @@ def _comments_sent(commenter_changes: list, developer: str) -> dict:
             if username != developer:
                 continue
 
-            owners[author] += 1
+            owners[owner] += 1
 
     return _people_stats(owners, [])
 
@@ -1146,7 +1146,7 @@ def _group_key_func(group_by: str):
         return lambda c: c.get("project") or "unknown"
     if group_by == "topic":
         return lambda c: c.get("topic") or "untagged"
-    if group_by == "author":
+    if group_by == "owner":
         return _normalize_owner
     raise ValueError(f"Unknown group: {group_by}")
 
@@ -1168,33 +1168,17 @@ def developer_performance_grouped(
     result = {}
 
     for group_name, group_dev_changes in grouped.items():
-        if group_by == "author":
-            group_reviewer_changes = [
-                c for c in reviewer_changes
-                if _normalize_owner(c) != group_name
-                and any(
-                    isinstance(reviewer, dict)
-                    and reviewer.get("username") == group_name
-                    for reviewer in c.get("allReviewers", [])
-                )
-            ]
-            group_commenter_changes = [
-                c for c in commenter_changes
-                if _normalize_owner(c) != group_name
-                and any(
-                    isinstance(comment.get("reviewer"), dict)
-                    and comment["reviewer"].get("username") == group_name
-                    for comment in c.get("comments", [])
-                )
-            ]
-        else:
-            group_reviewer_changes = [
-                c for c in reviewer_changes if key_func(c) == group_name
-            ]
-            group_commenter_changes = [
-                c for c in commenter_changes if key_func(c) == group_name
-            ]
-        snapshot_username = group_name if group_by == "author" else username
+        group_reviewer_changes = [
+            c for c in reviewer_changes if key_func(c) == group_name
+        ]
+        group_commenter_changes = [
+            c for c in commenter_changes if key_func(c) == group_name
+        ]
+
+        # When grouping by "owner", each group *is* a developer, so the
+        # snapshot's username should be that developer, not the outer
+        # `username` argument (which doesn't apply per-group here).
+        snapshot_username = group_name if group_by == "owner" else username
 
         result[group_name] = developer_snapshot_metrics(
             username=snapshot_username,
@@ -1212,9 +1196,9 @@ def project_developer_metrics(
     commenter_changes: list,
 ) -> dict:
     """
-    Per-author breakdown of `owner_changes` (i.e. grouping by "author").
+    Per-owner breakdown of `owner_changes` (i.e. grouping by "owner").
     Thin wrapper around developer_performance_grouped() so the two grouping
-    paths share one implementation. `username` is unused for author-grouping
+    paths share one implementation. `username` is unused for owner-grouping
     since each group's own key is used as the snapshot username.
     """
     return developer_performance_grouped(
@@ -1222,7 +1206,7 @@ def project_developer_metrics(
         dev_changes=owner_changes,
         reviewer_changes=reviewer_changes,
         commenter_changes=commenter_changes,
-        group_by="author",
+        group_by="owner",
     )
 
 
@@ -1233,9 +1217,9 @@ def split_changes_for_developer(changes: list, username: str) -> ChangeSet:
     commenter_changes = []
 
     for change in changes:
-        author = _normalize_owner(change)
+        owner = _normalize_owner(change)
 
-        if author == username:
+        if owner == username:
             dev_changes.append(change)
 
         reviewers = {
