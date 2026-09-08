@@ -1174,10 +1174,6 @@ def developer_performance_grouped(
         group_commenter_changes = [
             c for c in commenter_changes if key_func(c) == group_name
         ]
-
-        # When grouping by "owner", each group *is* a developer, so the
-        # snapshot's username should be that developer, not the outer
-        # `username` argument (which doesn't apply per-group here).
         snapshot_username = group_name if group_by == "owner" else username
 
         result[group_name] = developer_snapshot_metrics(
@@ -1208,33 +1204,3 @@ def project_developer_metrics(
         commenter_changes=commenter_changes,
         group_by="owner",
     )
-
-
-def split_changes_for_developer(changes: list, username: str) -> ChangeSet:
-
-    dev_changes = []
-    reviewer_changes = []
-    commenter_changes = []
-
-    for change in changes:
-        owner = _normalize_owner(change)
-
-        if owner == username:
-            dev_changes.append(change)
-
-        reviewers = {
-            reviewer.get("username")
-            for reviewer in change.get("allReviewers", [])
-            if reviewer.get("username") not in ({None} | EXCLUDED_USERNAMES)
-        }
-
-        if username in reviewers:
-            reviewer_changes.append(change)
-
-        if any(
-            comment.get("reviewer", {}).get("username") == username
-            for comment in change.get("comments", [])
-        ):
-            commenter_changes.append(change)
-
-    return ChangeSet(dev_changes, reviewer_changes, commenter_changes)

@@ -233,37 +233,13 @@ def gerrit_project(
             username=username,
             project=project,
             topic=topic,
-            status=status,           
+            status=status,
             start_date=start_date,
             end_date=end_date,
             live=live,
         )
 
-        reviewer_changes = load_changes(
-            reviewer=username,
-            project=project,
-            topic=topic,
-            status=status,         
-            start_date=start_date,
-            end_date=end_date,
-            live=live,
-        )
-        """ 
-        if live:
-            reviewer_changes = enrich_reviewer_updates(reviewer_changes)
-        """
-            
-        commenter_changes = load_changes(
-            commenter=username,
-            project=project,
-            topic=topic,
-            status=status,          
-            start_date=start_date,
-            end_date=end_date,
-            live=live,
-        )
-
-        developers = sorted({
+        developers = sorted(username) if username else sorted({
             (c.get("owner") or {}).get("username")
             for c in owner_changes
             if (c.get("owner") or {}).get("username")
@@ -275,6 +251,64 @@ def gerrit_project(
             if c.get("topic")
         })
 
+        if username:
+            developer_metrics = {}
+
+            for developer in username:
+                developer_owner_changes = [
+                    change for change in owner_changes
+                    if (change.get("owner") or {}).get("username") == developer
+                ]
+                developer_reviewer_changes = load_changes(
+                    reviewer=developer,
+                    project=project,
+                    topic=topic,
+                    status=status,
+                    start_date=start_date,
+                    end_date=end_date,
+                    live=live,
+                )
+                developer_commenter_changes = load_changes(
+                    commenter=developer,
+                    project=project,
+                    topic=topic,
+                    status=status,
+                    start_date=start_date,
+                    end_date=end_date,
+                    live=live,
+                )
+
+                developer_metrics[developer] = developer_snapshot_metrics(
+                    developer,
+                    dev_changes=developer_owner_changes,
+                    reviewer_changes=developer_reviewer_changes,
+                    commenter_changes=developer_commenter_changes,
+                )
+        else:
+            reviewer_changes = load_changes(
+                reviewer=None,
+                project=project,
+                topic=topic,
+                status=status,
+                start_date=start_date,
+                end_date=end_date,
+                live=live,
+            )
+            commenter_changes = load_changes(
+                commenter=None,
+                project=project,
+                topic=topic,
+                status=status,
+                start_date=start_date,
+                end_date=end_date,
+                live=live,
+            )
+            developer_metrics = project_developer_metrics(
+                owner_changes,
+                reviewer_changes,
+                commenter_changes,
+            )
+
         metrics = {
             "filters": {
                 "project": project,
@@ -284,11 +318,7 @@ def gerrit_project(
             },
             "developers": developers,
             "topics": topics,
-            "developer_metrics": project_developer_metrics(
-                owner_changes,
-                reviewer_changes,
-                commenter_changes,
-            ),
+            "developer_metrics": developer_metrics,
         }
 
         results.append({
@@ -443,35 +473,7 @@ def gerrit_team_performance(
             live=live,
         )
 
-        reviewer_changes = load_changes(
-            reviewer=members,
-            project=project,
-            topic=topic,
-            status=status,         
-            start_date=start_date,
-            end_date=end_date,
-            live=live,
-        )
-
-        """        
-        if live:
-        reviewer_changes = enrich_reviewer_updates(reviewer_changes)
-        """
-        commenter_changes = load_changes(
-            commenter=members,
-            project=project,
-            topic=topic,
-            status=status,        
-            start_date=start_date,
-            end_date=end_date,
-            live=live,
-        )
-
-        developers = sorted({
-            (change.get("owner") or {}).get("username")
-            for change in owner_changes
-            if (change.get("owner") or {}).get("username")
-        })
+        developers = sorted(members)
 
         projects = sorted({
             change.get("project")
@@ -485,6 +487,38 @@ def gerrit_team_performance(
             if change.get("topic")
         })
 
+        developer_metrics = {}
+        for developer in members:
+            developer_owner_changes = [
+                change for change in owner_changes
+                if (change.get("owner") or {}).get("username") == developer
+            ]
+            developer_reviewer_changes = load_changes(
+                reviewer=developer,
+                project=project,
+                topic=topic,
+                status=status,
+                start_date=start_date,
+                end_date=end_date,
+                live=live,
+            )
+            developer_commenter_changes = load_changes(
+                commenter=developer,
+                project=project,
+                topic=topic,
+                status=status,
+                start_date=start_date,
+                end_date=end_date,
+                live=live,
+            )
+
+            developer_metrics[developer] = developer_snapshot_metrics(
+                developer,
+                dev_changes=developer_owner_changes,
+                reviewer_changes=developer_reviewer_changes,
+                commenter_changes=developer_commenter_changes,
+            )
+
         metrics = {
             "team": serialize_team(team),
             "filters": {
@@ -495,11 +529,7 @@ def gerrit_team_performance(
             "developers": developers,
             "projects": projects,
             "topics": topics,
-            "developer_metrics": project_developer_metrics(
-                owner_changes,
-                reviewer_changes,
-                commenter_changes,
-            ),
+            "developer_metrics": developer_metrics,
         }
 
         results.append({
