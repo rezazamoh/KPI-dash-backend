@@ -264,9 +264,9 @@ def gerrit_project(
         )
 
         developers = sorted({
-            (c.get("owner") or {}).get("username")
+            (c.get("author") or {}).get("username")
             for c in owner_changes
-            if (c.get("owner") or {}).get("username")
+            if (c.get("author") or {}).get("username")
         })
 
         topics = sorted({
@@ -468,9 +468,9 @@ def gerrit_team_performance(
         )
 
         developers = sorted({
-            (change.get("owner") or {}).get("username")
+            (change.get("author") or {}).get("username")
             for change in owner_changes
-            if (change.get("owner") or {}).get("username")
+            if (change.get("author") or {}).get("username")
         })
 
         projects = sorted({

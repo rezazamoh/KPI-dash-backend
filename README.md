@@ -240,7 +240,7 @@ Live Mode vs Offline Mode
 | `gerrit_changes` | Raw Gerrit change records and metadata |
 | `developer_snapshots` | Persisted developer KPI snapshot JSON |
 
-`gerrit_changes` stores normalized columns such as `project`, `owner`, `status`, `created_at`, `updated_at`, and `raw_json`.
+`gerrit_changes` stores normalized columns such as `project`, `author`, `status`, `created_at`, `updated_at`, and `raw_json`.
 
 ## Current Limitations and Assumptions
 

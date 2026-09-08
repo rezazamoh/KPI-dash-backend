@@ -32,14 +32,14 @@ def run_command(cmd, timeout=30):
         return None
 
 
-def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, issue=None, options=None):
+def fetch_changes(start_date=None, end_date=None, author=None, project=None, topic=None, reviewer=None, commenter=None, status=None, issue=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
     Args:
         start_date (str|datetime, optional): Start date in YYYY-MM-DD format.
         end_date (str|datetime, optional): End date in YYYY-MM-DD format.
-        owner (str, optional): Gerrit owner username filter.
+        author (str, optional): Gerrit author username filter.
         project (str, optional): Gerrit project filter.
         topic (str, optional): Gerrit topic filter.
         status (str | list[str], optional): Gerrit status filter such as NEW, MERGED, ABANDONED.
@@ -65,11 +65,11 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         if key in ("reviewer", "commentby"):
             if len(value) == 1:
                 query_terms.append(
-                    f'({key}:"{value[0]}" not owner:"{value[0]}")'
+                    f'({key}:"{value[0]}" not author:"{value[0]}")'
                 )
             else:
                 parts = [
-                    f'({key}:"{v}" not owner:"{v}")'
+                    f'({key}:"{v}" not author:"{v}")'
                     for v in value
                 ]
                 query_terms.append(f"({' OR '.join(parts)})")
@@ -89,7 +89,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     if formatted_end:
         query_terms.append(f'before:"{formatted_end}"')
         
-    add_query_terms(query_terms, "owner", owner)
+    add_query_terms(query_terms, "author", author)
     add_query_terms(query_terms, "reviewer", reviewer)
     add_query_terms(query_terms, "commentby", commenter)
     add_query_terms(query_terms, "project", project)
@@ -214,14 +214,14 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
 
     return changes
 
-def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, options=None):
+def fetch_changes_from_json(start_date=None, end_date=None, author=None, project=None, topic=None, reviewer=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
     Args:
         start_date (str|datetime, optional): Start date in YYYY-MM-DD format.
         end_date (str|datetime, optional): End date in YYYY-MM-DD format.
-        owner (str, optional): Gerrit owner username filter.
+        author (str, optional): Gerrit author username filter.
         project (str, optional): Gerrit project filter.
         topic (str, optional): Gerrit topic filter.
     

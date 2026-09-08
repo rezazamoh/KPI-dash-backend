@@ -49,7 +49,7 @@ def load_changes(
         return fetch_changes(
             start_date=parsed_start,
             end_date=parsed_end,
-            owner=username,
+            author=username,
             reviewer=reviewer,
             commenter=commenter,
             project=project,
@@ -62,7 +62,7 @@ def load_changes(
     return get_gerrit_changes(
         start_date=parsed_start,
         end_date=parsed_end,
-        owner=username,
+        author=username,
         reviewer=reviewer,
         commenter=commenter,
         project=project,
