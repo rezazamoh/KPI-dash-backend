@@ -229,3 +229,5 @@ venv
 .env
 .git
 .gitignore
+
+metrics.db
