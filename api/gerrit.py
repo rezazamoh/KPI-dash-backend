@@ -96,6 +96,9 @@ def gerrit_developer(
     live: bool = Query(True),
 ):
     results = []
+    all_owner_changes = []
+    all_reviewer_changes = []
+    all_commenter_changes = []
 
     for start_date, end_date in parse_periods(periods):
 
@@ -131,6 +134,10 @@ def gerrit_developer(
             end_date=end_date,
             live=live,
         )
+
+        all_owner_changes.extend(owner_changes)
+        all_reviewer_changes.extend(reviewer_changes)
+        all_commenter_changes.extend(commenter_changes)
 
         metrics = {
             "username": username,
@@ -172,7 +179,15 @@ def gerrit_developer(
             "metrics": metrics,
         })
 
-    return results
+    return {
+        "periods": results,
+        "overall_performance": developer_snapshot_metrics(
+            username,
+            dev_changes=all_owner_changes,
+            reviewer_changes=all_reviewer_changes,
+            commenter_changes=all_commenter_changes,
+        ),
+    }
 
 @router.get("/developers/{username}/topics")
 def gerrit_developer_topics(
@@ -226,6 +241,9 @@ def gerrit_project(
     live: bool = Query(True),
 ):
     results = []
+    all_owner_changes = []
+    all_reviewer_changes = []
+    all_commenter_changes = []
 
     for start_date, end_date in parse_periods(periods):
 
@@ -278,6 +296,9 @@ def gerrit_project(
                     live=live,
                 )
 
+                all_reviewer_changes.extend(developer_reviewer_changes)
+                all_commenter_changes.extend(developer_commenter_changes)
+
                 developer_metrics[developer] = developer_snapshot_metrics(
                     developer,
                     dev_changes=developer_owner_changes,
@@ -309,6 +330,11 @@ def gerrit_project(
                 commenter_changes,
             )
 
+            all_reviewer_changes.extend(reviewer_changes)
+            all_commenter_changes.extend(commenter_changes)
+
+        all_owner_changes.extend(owner_changes)
+
         metrics = {
             "filters": {
                 "project": project,
@@ -327,7 +353,14 @@ def gerrit_project(
             "metrics": metrics,
         })
 
-    return results
+    return {
+        "periods": results,
+        "overall_performance": project_developer_metrics(
+            all_owner_changes,
+            all_reviewer_changes,
+            all_commenter_changes,
+        ),
+    }
 
 @router.get("/teams")
 def list_teams():
@@ -436,6 +469,9 @@ def gerrit_team_performance(
         ]
 
     results = []
+    all_owner_changes = []
+    all_reviewer_changes = []
+    all_commenter_changes = []
 
     for start_date, end_date in parse_periods(periods):
 
@@ -472,6 +508,7 @@ def gerrit_team_performance(
             end_date=end_date,
             live=live,
         )
+        all_owner_changes.extend(owner_changes)
 
         developers = sorted(members)
 
@@ -502,6 +539,7 @@ def gerrit_team_performance(
                 end_date=end_date,
                 live=live,
             )
+            all_reviewer_changes.extend(developer_reviewer_changes)
             developer_commenter_changes = load_changes(
                 commenter=developer,
                 project=project,
@@ -511,6 +549,7 @@ def gerrit_team_performance(
                 end_date=end_date,
                 live=live,
             )
+            all_commenter_changes.extend(developer_commenter_changes)
 
             developer_metrics[developer] = developer_snapshot_metrics(
                 developer,
@@ -538,4 +577,11 @@ def gerrit_team_performance(
             "metrics": metrics,
         })
 
-    return results
+    return {
+        "periods": results,
+        "overall_performance": project_developer_metrics(
+            all_owner_changes,
+            all_reviewer_changes,
+            all_commenter_changes,
+        ),
+    }

@@ -64,6 +64,14 @@ class AppSettings(Base):
         default=True,
     )
 
+    patchset_windows = Column(JSON, nullable=True)
+
+    use_patchset_windows = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
     updated_at = Column(
         DateTime,
         default=datetime.now,

@@ -16,19 +16,24 @@ class DurationWindow(BaseModel):
 class SettingsUpdate(BaseModel):
     duration_windows: list[DurationWindow] | None = None
     use_duration_windows: bool | None = None
+    patchset_windows: list[DurationWindow] | None = None
+    use_patchset_windows: bool | None = None
 
 
 router = APIRouter(prefix="/api/settings", tags=["Settings"])
 
 
-def _validate_duration_windows(windows: list[DurationWindow] | None):
+def _validate_windows(
+    windows: list[DurationWindow] | None,
+    setting_name: str,
+):
     if windows is None:
         return None
 
     if not windows:
         raise HTTPException(
             status_code=422,
-            detail="duration_windows must contain at least one window or be null.",
+            detail=f"{setting_name} must contain at least one window or be null.",
         )
 
     normalized = [window.dict() for window in windows]
@@ -36,7 +41,7 @@ def _validate_duration_windows(windows: list[DurationWindow] | None):
     if normalized[0]["min"] is not None and normalized[0]["min"] != 0:
         raise HTTPException(
             status_code=422,
-            detail="The first duration window min must be 0 or null.",
+            detail=f"The first {setting_name} min must be 0 or null.",
         )
 
     for index, window in enumerate(normalized):
@@ -46,7 +51,7 @@ def _validate_duration_windows(windows: list[DurationWindow] | None):
         if minimum is None and index != 0:
             raise HTTPException(
                 status_code=422,
-                detail="Only the first duration window may have min set to null.",
+                detail=f"Only the first {setting_name} window may have min set to null.",
             )
 
         if maximum is not None and minimum is not None and minimum >= maximum:
@@ -58,7 +63,7 @@ def _validate_duration_windows(windows: list[DurationWindow] | None):
         if maximum is None and index != len(normalized) - 1:
             raise HTTPException(
                 status_code=422,
-                detail="Only the final duration window may have max set to null.",
+                detail=f"Only the final {setting_name} window may have max set to null.",
             )
 
         if index and (
@@ -68,7 +73,7 @@ def _validate_duration_windows(windows: list[DurationWindow] | None):
         ):
             raise HTTPException(
                 status_code=422,
-                detail="Duration windows must be contiguous and must not overlap.",
+                detail=f"{setting_name} must be contiguous and must not overlap.",
             )
 
     return normalized
@@ -82,10 +87,15 @@ def get_settings():
 @router.patch("")
 def patch_settings(data: SettingsUpdate):
     has_duration_windows = "duration_windows" in data.__fields_set__
-    duration_windows = _validate_duration_windows(data.duration_windows)
+    has_patchset_windows = "patchset_windows" in data.__fields_set__
+    duration_windows = _validate_windows(data.duration_windows, "duration_windows")
+    patchset_windows = _validate_windows(data.patchset_windows, "patchset_windows")
 
     if not has_duration_windows:
         duration_windows = None
+
+    if not has_patchset_windows:
+        patchset_windows = None
 
     return update_app_settings(
         duration_windows=(
@@ -94,4 +104,10 @@ def patch_settings(data: SettingsUpdate):
             else _UNSET
         ),
         use_duration_windows=data.use_duration_windows,
+        patchset_windows=(
+            patchset_windows
+            if has_patchset_windows
+            else _UNSET
+        ),
+        use_patchset_windows=data.use_patchset_windows,
     )

@@ -27,11 +27,15 @@ def get_app_settings():
             return {
                 "duration_windows": None,
                 "use_duration_windows": True,
+                "patchset_windows": None,
+                "use_patchset_windows": True,
             }
 
         return {
             "duration_windows": settings.duration_windows,
             "use_duration_windows": settings.use_duration_windows,
+            "patchset_windows": settings.patchset_windows,
+            "use_patchset_windows": settings.use_patchset_windows,
         }
     finally:
         db.close()
@@ -40,6 +44,8 @@ def get_app_settings():
 def update_app_settings(
     duration_windows=_UNSET,
     use_duration_windows=None,
+    patchset_windows=_UNSET,
+    use_patchset_windows=None,
 ):
     db = SessionLocal()
 
@@ -59,6 +65,16 @@ def update_app_settings(
                     if use_duration_windows is None
                     else use_duration_windows
                 ),
+                patchset_windows=(
+                    None
+                    if patchset_windows is _UNSET
+                    else patchset_windows
+                ),
+                use_patchset_windows=(
+                    True
+                    if use_patchset_windows is None
+                    else use_patchset_windows
+                ),
             )
             db.add(settings)
         else:
@@ -68,12 +84,20 @@ def update_app_settings(
             if use_duration_windows is not None:
                 settings.use_duration_windows = use_duration_windows
 
+            if patchset_windows is not _UNSET:
+                settings.patchset_windows = patchset_windows
+
+            if use_patchset_windows is not None:
+                settings.use_patchset_windows = use_patchset_windows
+
         db.commit()
         db.refresh(settings)
 
         return {
             "duration_windows": settings.duration_windows,
             "use_duration_windows": settings.use_duration_windows,
+            "patchset_windows": settings.patchset_windows,
+            "use_patchset_windows": settings.use_patchset_windows,
             "updated_at": settings.updated_at,
         }
     finally:

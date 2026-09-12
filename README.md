@@ -199,6 +199,7 @@ http://127.0.0.1:8000/docs
 - `live=true` forces Gerrit SSH query execution instead of SQLite lookups.
 - `group_by_repo` and `group_by_topic` flags are used to see developers performance separated by repos or topics along side the overall performance. 
 - `duration_windows` controls lead-time and patchset-gap distributions. Set `use_duration_windows` to `false` to temporarily use automatic bucketing without deleting the saved windows. The first `min` and final `max` may be `null` for open-ended ranges.
+- `patchset_windows` controls patchset-frequency distributions. Set `use_patchset_windows` to `false` to temporarily use automatic bucketing without deleting the saved windows.
 
 Example settings body:
 

@@ -42,6 +42,17 @@ VALID_VOTE_VALUES = {-2, -1, 1, 2}
 
 _HEADER_PATTERN = re.compile(r"^Patch Set \d+:")
 _VOTE_PATTERN = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*([+-]\d+)")
+_COMMENT_MARKER_PATTERN = re.compile(r"\[\+[^]\r\n]+\]")
+_IGNORED_COMMENT_MESSAGES = {
+    "Abandoned",
+    "Restored",
+    "Commit message was updated.",
+}
+_IGNORED_COMMENT_PREFIXES = (
+    "Change has been successfully ",
+    "Removed ",
+    "Uploaded patch set ",
+)
 
 # Gerrit's reviewer-update timestamp format, e.g. "2024-01-02 03:04:05.123000".
 # The trailing "000" pads microseconds out to a fixed 6-digit field so
@@ -65,6 +76,7 @@ def _people_stats(
     counter: dict,
     change_counts: list,
     by_person_label: dict | None = None,
+    change_numbers_by_person: dict | None = None,
 ) -> dict:
     """
     Turn a {username: count} counter into a ranked people list.
@@ -107,6 +119,9 @@ def _people_stats(
 
         if by_person_label and username in by_person_label:
             person["by_label"] = by_person_label[username]
+
+        if change_numbers_by_person and username in change_numbers_by_person:
+            person["change_numbers"] = change_numbers_by_person[username]
 
         people.append(person)
 
@@ -465,13 +480,16 @@ def _configured_duration_buckets(duration_windows: list[dict]) -> list:
 def _duration_distribution(
     values: list,
     items: list | None = None,
+    use_duration_windows: bool = True,
+    windows_key: str = "duration_windows",
+    use_windows_key: str = "use_duration_windows",
 ) -> list:
     """Bucket duration values (seconds) into a chart-ready distribution."""
 
     settings = get_app_settings()
     duration_windows = (
-        settings["duration_windows"]
-        if settings["use_duration_windows"] is not False
+        settings.get(windows_key)
+        if use_duration_windows and settings.get(use_windows_key, True) is not False
         else None
     )
 
@@ -485,7 +503,7 @@ def _duration_distribution(
         return []
 
     bucket_counts = Counter()
-    bucket_change_numbers = defaultdict(list)
+    bucket_change_numbers = defaultdict(dict)
     bucket_change_patchsets = defaultdict(list)
 
     if items is None:
@@ -504,7 +522,10 @@ def _duration_distribution(
 
             change_number = item.get("change_number")
             if change_number is not None:
-                bucket_change_numbers[bucket_index].append(change_number)
+                bucket_change_numbers[bucket_index][change_number] = {
+                    "change_number": change_number,
+                    "title": item.get("title"),
+                }
 
             change_patchset = item.get("change_patchset")
             if change_patchset is not None:
@@ -517,7 +538,7 @@ def _duration_distribution(
 
     for i, (b_min, b_max) in enumerate(buckets):
         count = bucket_counts.get(i, 0)
-        change_numbers = bucket_change_numbers.get(i, [])
+        change_numbers = list(bucket_change_numbers.get(i, {}).values())
         change_patchsets = bucket_change_patchsets.get(i, [])
 
         distribution.append(
@@ -532,6 +553,33 @@ def _duration_distribution(
         )
 
     return distribution
+
+
+def _patchset_distribution(changes: list) -> list:
+    """Bucket the number of patchsets used by each change."""
+
+    items = []
+
+    for change in changes:
+        patchset_count = change.get("currentPatchSet", {}).get("number")
+
+        if patchset_count is None:
+            patchset_count = len(change.get("patchSets", []))
+
+        items.append({
+            "duration": patchset_count,
+            "change_number": change.get("number"),
+            "title": change.get("subject"),
+        })
+
+    values = [item["duration"] for item in items]
+
+    return _duration_distribution(
+        values,
+        items,
+        windows_key="patchset_windows",
+        use_windows_key="use_patchset_windows",
+    )
 
 
 def _patchset_gap_time(
@@ -582,6 +630,7 @@ def _patchset_gap_time(
                     "url": change.get("url"),
                     "change_number": change.get("number"),
                     "change_patchset": curr[1],
+                    "title": change.get("subject"),
                 }
             )
 
@@ -688,6 +737,20 @@ def _review_vote_stats(change: dict, username: str) -> dict:
         label_stats["values"] = dict(label_stats["values"])
 
     return by_label
+
+
+def _is_review_or_marker_comment(comment: dict) -> bool:
+    """Return whether a comment is generated review or marker activity."""
+
+    message = comment.get("message", "")
+    first_line = message.split("\n")[0].strip()
+
+    return bool(
+        _HEADER_PATTERN.match(first_line)
+        or _COMMENT_MARKER_PATTERN.search(message)
+        or message.strip() in _IGNORED_COMMENT_MESSAGES
+        or message.strip().startswith(_IGNORED_COMMENT_PREFIXES)
+    )
 
 def _merge_person_label_stats(target: dict, source: dict) -> None:
     """Merge label-level vote statistics into a person's existing stats."""
@@ -823,32 +886,39 @@ def _review_requests_sent(
 
 def _comments_received(dev_changes: list) -> dict:
     commenters = defaultdict(int)
+    change_numbers_by_person = defaultdict(list)
     change_comment_counts = []
 
     for change in dev_changes:
         owner = _normalize_owner(change)
         count = 0
         for comment in change.get("comments", []):
-            reviewer = comment.get("reviewer")
 
+            reviewer = comment.get("reviewer")
             if not reviewer:
                 continue
-
             username = reviewer.get("username")
-
-            if not username or username == owner or username in EXCLUDED_USERNAMES:
+            if username == owner  or username in EXCLUDED_USERNAMES or _is_review_or_marker_comment(comment):
                 continue
 
             commenters[username] += 1
+            change_number = change.get("number")
+            if change_number is not None:
+                change_numbers_by_person[username].append(change_number)
             count += 1
         change_comment_counts.append(count)
 
-    return _people_stats(commenters, change_comment_counts)
+    return _people_stats(
+        commenters,
+        change_comment_counts,
+        change_numbers_by_person=change_numbers_by_person,
+    )
 
 
 def _comments_sent(commenter_changes: list, developer: str) -> dict:
     commenter_changes = commenter_changes or []
     owners = defaultdict(int)
+    change_numbers_by_person = defaultdict(list)
     for change in commenter_changes:
         owner = _normalize_owner(change)
 
@@ -857,18 +927,22 @@ def _comments_sent(commenter_changes: list, developer: str) -> dict:
 
         for comment in change.get("comments", []):
             reviewer = comment.get("reviewer")
-
             if not reviewer:
                 continue
-
             username = reviewer.get("username")
-
-            if username != developer:
+            if username != developer  or _is_review_or_marker_comment(comment):
                 continue
 
             owners[owner] += 1
+            change_number = change.get("number")
+            if change_number is not None:
+                change_numbers_by_person[owner].append(change_number)
 
-    return _people_stats(owners, [])
+    return _people_stats(
+        owners,
+        [],
+        change_numbers_by_person=change_numbers_by_person,
+    )
 
 
 def reviewer_response_time(changes: list, username: str) -> Optional[dict]:
@@ -980,6 +1054,7 @@ def _lead_time(
                 "duration": duration,
                 "url": change.get("url"),
                 "change_number": change.get("number"),
+                "title": change.get("subject"),
             }
         )
 
@@ -1096,6 +1171,7 @@ def summarize_change_metrics(
         "change_count": len(dev_changes),
         "changes_reviewed": len(reviewer_changes),
         "average_patchsets": _average_patchsets(dev_changes),
+        "patchset_distribution": _patchset_distribution(dev_changes),
         "patchset_gap_time": _patchset_gap_time(
             dev_changes,
             debug=True,

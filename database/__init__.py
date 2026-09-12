@@ -24,4 +24,20 @@ with engine.begin() as connection:
             )
         )
 
+    if "patchset_windows" not in columns:
+        connection.execute(
+            text(
+                "ALTER TABLE app_settings "
+                "ADD COLUMN patchset_windows JSON"
+            )
+        )
+
+    if "use_patchset_windows" not in columns:
+        connection.execute(
+            text(
+                "ALTER TABLE app_settings "
+                "ADD COLUMN use_patchset_windows BOOLEAN NOT NULL DEFAULT 1"
+            )
+        )
+
 print("Database created")
