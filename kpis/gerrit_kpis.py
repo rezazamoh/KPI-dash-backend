@@ -51,6 +51,7 @@ _IGNORED_COMMENT_MESSAGES = {
 _IGNORED_COMMENT_PREFIXES = (
     "Change has been successfully ",
     "Removed ",
+    "Created ",
     "Uploaded patch set ",
 )
 
