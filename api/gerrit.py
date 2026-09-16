@@ -100,7 +100,8 @@ def gerrit_developer(
     all_reviewer_changes = []
     all_commenter_changes = []
 
-    for start_date, end_date in parse_periods(periods):
+    parsed = parse_periods(periods)
+    for start_date, end_date in parsed:
 
         owner_changes = load_changes(
             username=username,
@@ -176,18 +177,55 @@ def gerrit_developer(
         results.append({
             "start": start_date,
             "end": end_date,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in owner_changes if c.get("number") is not None],
             "metrics": metrics,
         })
 
-    return {
-        "periods": results,
-        "overall_performance": developer_snapshot_metrics(
-            username,
-            dev_changes=all_owner_changes,
-            reviewer_changes=all_reviewer_changes,
-            commenter_changes=all_commenter_changes,
-        ),
-    }
+    if len(parsed) > 1:
+        overall_metrics = {
+            "username": username,
+            "snapshot_time": datetime.now(),
+            "live": live,
+            "filters": {
+                "repo": repo,
+                "topic": topic,
+            },
+            "overall_performance": developer_snapshot_metrics(
+                username,
+                dev_changes=all_owner_changes,
+                reviewer_changes=all_reviewer_changes,
+                commenter_changes=all_commenter_changes,
+            ),
+        }
+
+        if group_by_repo:
+            overall_metrics["grouped_by_repo"] = developer_performance_grouped(
+                username=username,
+                dev_changes=all_owner_changes,
+                reviewer_changes=all_reviewer_changes,
+                commenter_changes=all_commenter_changes,
+                group_by="project",
+            )
+
+        if group_by_topic:
+            overall_metrics["grouped_by_topic"] = developer_performance_grouped(
+                username=username,
+                dev_changes=all_owner_changes,
+                reviewer_changes=all_reviewer_changes,
+                commenter_changes=all_commenter_changes,
+                group_by="topic",
+            )
+
+        starts = [s for s, _ in parsed if s is not None]
+        ends = [e for _, e in parsed if e is not None]
+        results.insert(0, {
+            "start": None,
+            "end": None,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in all_owner_changes if c.get("number") is not None],
+            "metrics": overall_metrics,
+        })
+
+    return {"periods": results}
 
 @router.get("/developers/{username}/topics")
 def gerrit_developer_topics(
@@ -245,7 +283,8 @@ def gerrit_project(
     all_reviewer_changes = []
     all_commenter_changes = []
 
-    for start_date, end_date in parse_periods(periods):
+    parsed = parse_periods(periods)
+    for start_date, end_date in parsed:
 
         owner_changes = load_changes(
             username=username,
@@ -350,17 +389,43 @@ def gerrit_project(
         results.append({
             "start": start_date,
             "end": end_date,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in owner_changes if c.get("number") is not None],
             "metrics": metrics,
         })
 
-    return {
-        "periods": results,
-        "overall_performance": project_developer_metrics(
-            all_owner_changes,
-            all_reviewer_changes,
-            all_commenter_changes,
-        ),
-    }
+    if len(parsed) > 1:
+        developers = sorted(username) if username else sorted({
+            (c.get("owner") or {}).get("username")
+            for c in all_owner_changes
+            if (c.get("owner") or {}).get("username")
+        })
+        topics = sorted({
+            c.get("topic")
+            for c in all_owner_changes
+            if c.get("topic")
+        })
+        results.insert(0, {
+            "start": None,
+            "end": None,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in all_owner_changes if c.get("number") is not None],
+            "metrics": {
+                "filters": {
+                    "project": project,
+                    "developers": username,
+                    "topics": topic,
+                    "live": live,
+                },
+                "developers": developers,
+                "topics": topics,
+                "developer_metrics": project_developer_metrics(
+                    all_owner_changes,
+                    all_reviewer_changes,
+                    all_commenter_changes,
+                ),
+            },
+        })
+
+    return {"periods": results}
 
 @router.get("/teams")
 def list_teams():
@@ -473,7 +538,8 @@ def gerrit_team_performance(
     all_reviewer_changes = []
     all_commenter_changes = []
 
-    for start_date, end_date in parse_periods(periods):
+    parsed = parse_periods(periods)
+    for start_date, end_date in parsed:
 
         if not members:
             metrics = {
@@ -494,6 +560,7 @@ def gerrit_team_performance(
             results.append({
                 "start": start_date,
                 "end": end_date,
+                "change_numbers": [],
                 "metrics": metrics,
             })
 
@@ -574,14 +641,91 @@ def gerrit_team_performance(
         results.append({
             "start": start_date,
             "end": end_date,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in owner_changes if c.get("number") is not None],
             "metrics": metrics,
         })
 
-    return {
-        "periods": results,
-        "overall_performance": project_developer_metrics(
-            all_owner_changes,
-            all_reviewer_changes,
-            all_commenter_changes,
-        ),
-    }
+    if len(parsed) > 1:
+        if not members:
+            overall_metrics = {
+                "team": serialize_team(team),
+                "filters": {
+                    "repo": project,
+                    "topic": topic,
+                    "live": live,
+                },
+                "overall_performance": {
+                    "change_count": 0,
+                },
+                "developers": [],
+                "projects": [],
+                "topics": [],
+            }
+        else:
+            developers = sorted(members)
+            projects = sorted({
+                change.get("project")
+                for change in all_owner_changes
+                if change.get("project")
+            })
+            topics = sorted({
+                change.get("topic")
+                for change in all_owner_changes
+                if change.get("topic")
+            })
+            # For overall team metrics with per-developer split, original root just used aggregated metrics.
+            # To keep it consistent and avoid complex per-dev accumulation, use aggregated metrics.
+            overall_metrics = {
+                "team": serialize_team(team),
+                "filters": {
+                    "repo": project,
+                    "topics": topic,
+                    "live": live,
+                },
+                "developers": developers,
+                "projects": projects,
+                "topics": topics,
+                "developer_metrics": {},
+            }
+            # Note: original current behavior for overall_performance is aggregated; keeping it simple.
+            # If needed, aggregate per-developer metrics could be computed here.
+            for developer in members:
+                dev_owner = [
+                    c for c in all_owner_changes
+                    if (c.get("owner") or {}).get("username") == developer
+                ]
+                # We don't have per-developer reviewer/commenter accumulated globally by developer,
+                # but all_reviewer_changes / all_commenter_changes contain all; filtering roughly:
+                dev_reviewer = [
+                    c for c in all_reviewer_changes
+                    if (c.get("reviewer") or {}).get("username") == developer
+                ]
+                dev_commenter = [
+                    c for c in all_commenter_changes
+                    if (c.get("commenter") or {}).get("username") == developer
+                ]
+                overall_metrics["developer_metrics"][developer] = developer_snapshot_metrics(
+                    developer,
+                    dev_changes=dev_owner,
+                    reviewer_changes=dev_reviewer,
+                    commenter_changes=dev_commenter,
+                )
+        results.insert(0, {
+            "start": None,
+            "end": None,
+            "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in (all_owner_changes if members else []) if c.get("number") is not None],
+            "metrics": overall_metrics if not members else {
+                "team": serialize_team(team),
+                "filters": {
+                    "repo": project,
+                    "topics": topic,
+                    "live": live,
+                },
+                "developers": sorted(members),
+                "projects": sorted({c.get("project") for c in all_owner_changes if c.get("project")}),
+                "topics": sorted({c.get("topic") for c in all_owner_changes if c.get("topic")}),
+                "developer_metrics": overall_metrics["developer_metrics"],
+            },
+        })
+
+    return {"periods": results}
