@@ -2,6 +2,14 @@ import json
 import subprocess
 from datetime import datetime, timedelta
 from config import GERRIT_HOST, GERRIT_PORT, GERRIT_USER
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_options = [
     "--all-reviewers",
@@ -32,7 +40,7 @@ def run_command(cmd, timeout=30):
         return None
 
 
-def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, issue=None, options=None):
+def fetch_changes_ssh(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, commenter=None, status=None, issue=None, options=None):
     """
     Fetch Gerrit changes via SSH query with optional filtering parameters.
     
@@ -47,7 +55,23 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     Returns:
         list: List of parsed change objects with raw JSON
     """
+    params = {
+        "start_date": start_date,
+        "end_date": end_date,
+        "owner": owner,
+        "project": project,
+        "topic": topic,
+        "reviewer": reviewer,
+        "commenter": commenter,
+        "status": status,
+        "issue": issue,
+        "options": options,
+    }
 
+    #logger.info(
+    #    "[FETCH_CHANGES] %s",
+    #    " ".join(f"{k}={v}" for k, v in params.items() if v is not None)
+    #)
     def format_value(value):
         if value is None:
             return None
@@ -130,14 +154,8 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
         print(cmd)
         print(
             f"[DEBUG] Running SSH command to "
-            f"{GERRIT_HOST}:{GERRIT_PORT} (start={start})"
+            f"{GERRIT_HOST}:{GERRIT_PORT})"
         )
-
-        if query_terms:
-            print(f"[DEBUG] Query terms: {' '.join(query_terms)}")
-        else:
-            print("[DEBUG] Query terms: ")
-
         result = run_command(cmd, timeout=15)
 
         if result is None:
@@ -170,10 +188,7 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
 
             # Gerrit query statistics row
             if obj.get("type") == "stats" or "rowCount" in obj:
-                print(
-                    f"[INFO] Batch returned "
-                    f"{obj.get('rowCount')} total matches"
-                )
+                #print(f"[INFO] Batch returned "f"{obj.get('rowCount')} total matches")
 
                 more_changes = obj.get("moreChanges", False)
                 continue
@@ -182,17 +197,9 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
 
         changes.extend(batch_changes)
 
-        print(
-            f"[INFO] Processed {line_count} lines "
-            f"from SSH output"
-        )
-        print(
-            f"[INFO] Parsed {len(batch_changes)} changes "
-            f"in this batch"
-        )
-        print(
-            f"[INFO] Total parsed changes: {len(changes)}"
-        )
+        #print( f"[INFO] Processed {line_count} lines " f"from SSH output")
+        #print( f"[INFO] Parsed {len(batch_changes)} changes " f"in this batch")
+        #print(f"[INFO] Total parsed changes: {len(changes)}")
 
         if not more_changes:
             break
@@ -213,6 +220,36 @@ def fetch_changes(start_date=None, end_date=None, owner=None, project=None, topi
     print(f"[INFO] Final parsed change count: {len(changes)}")
 
     return changes
+
+
+def fetch_changes(
+    start_date=None,
+    end_date=None,
+    owner=None,
+    project=None,
+    topic=None,
+    reviewer=None,
+    commenter=None,
+    status=None,
+    issue=None,
+    options=None,
+):
+    """REST-backed compatibility wrapper for existing call sites."""
+    from collectors.gerrit_rest import fetch_changes as rest_fetch_changes
+
+    return rest_fetch_changes(
+        start_date=start_date,
+        end_date=end_date,
+        owner=owner,
+        project=project,
+        topic=topic,
+        reviewer=reviewer,
+        commenter=commenter,
+        status=status,
+        issue=issue,
+        options=options,
+    )
+
 
 def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=None, topic=None, reviewer=None, options=None):
     """
@@ -242,7 +279,7 @@ def fetch_changes_from_json(start_date=None, end_date=None, owner=None, project=
 
     return changes
 
-def ls_projects():
+def ls_projects_ssh():
     """Return a list of Gerrit projects via SSH ls-projects."""
     cmd = [
         "ssh",
@@ -264,7 +301,15 @@ def ls_projects():
 
     return [line.strip() for line in result.stdout.splitlines() if line.strip() and "template" not in line.strip().lower()]
 
-def ls_groups():
+
+def ls_projects():
+    """REST-backed compatibility wrapper for existing call sites."""
+    from collectors.gerrit_rest import ls_projects as rest_ls_projects
+
+    return rest_ls_projects()
+
+
+def ls_groups_ssh():
     """Return a list of Gerrit groups via SSH ls-groups."""
     cmd = [
         "ssh",
@@ -290,7 +335,14 @@ def ls_groups():
     ]
 
 
-def ls_members(group, recursive=False):
+def ls_groups():
+    """REST-backed compatibility wrapper for existing call sites."""
+    from collectors.gerrit_rest import ls_groups as rest_ls_groups
+
+    return rest_ls_groups()
+
+
+def ls_members_ssh(group, recursive=False):
     """Return members for a Gerrit group."""
 
     remote_cmd = f'gerrit ls-members "{group}"'
@@ -331,10 +383,18 @@ def ls_members(group, recursive=False):
 
     return members
 
-def all_members():
+
+def ls_members(group, recursive=False):
+    """REST-backed compatibility wrapper for existing call sites."""
+    from collectors.gerrit_rest import ls_members as rest_ls_members
+
+    return rest_ls_members(group, recursive=recursive)
+
+
+def all_members_ssh():
     """Return unique members from all Gerrit groups containing 'Developers'."""
 
-    groups = ls_groups()
+    groups = ls_groups_ssh()
 
     if not groups:
         print("[WARNING] No Gerrit groups found")
@@ -352,7 +412,7 @@ def all_members():
     members = set()
 
     for group in developer_groups:
-        group_members = ls_members(group)
+        group_members = ls_members_ssh(group)
 
         print(
             f"[INFO] Group '{group}': "
@@ -370,3 +430,10 @@ def all_members():
     print("=" * 60)
 
     return result
+
+
+def all_members():
+    """REST-backed compatibility wrapper for existing call sites."""
+    from collectors.gerrit_rest import all_members as rest_all_members
+
+    return rest_all_members()

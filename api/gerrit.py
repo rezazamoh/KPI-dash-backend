@@ -20,7 +20,15 @@ from database.crud import (
     get_projects,
     update_projects,
 )
+import time
+import logging
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+logger = logging.getLogger(__name__)
 class TeamCreate(BaseModel):
     name: str
     members: list[str]
@@ -101,8 +109,9 @@ def gerrit_developer(
     all_commenter_changes = []
 
     parsed = parse_periods(periods)
+    total = time.perf_counter()
     for start_date, end_date in parsed:
-
+        t = time.perf_counter()
         owner_changes = load_changes(
             username=username,
             project=repo,
@@ -135,11 +144,12 @@ def gerrit_developer(
             end_date=end_date,
             live=live,
         )
-
+        logger.info("[PERF] fetching changes [%s -> %s]: %.3fs",start_date, end_date, time.perf_counter() - t)
         all_owner_changes.extend(owner_changes)
         all_reviewer_changes.extend(reviewer_changes)
         all_commenter_changes.extend(commenter_changes)
 
+        t = time.perf_counter()
         metrics = {
             "username": username,
             "snapshot_time": datetime.now(),
@@ -155,6 +165,7 @@ def gerrit_developer(
                 commenter_changes=commenter_changes,
             ),
         }
+
 
         if group_by_repo:
             metrics["grouped_by_repo"] = developer_performance_grouped(
@@ -180,7 +191,9 @@ def gerrit_developer(
             "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in owner_changes if c.get("number") is not None],
             "metrics": metrics,
         })
+        logger.info("[PERF] calculate kpis [%s -> %s]: %.3fs",start_date, end_date, time.perf_counter() - t)
 
+    t = time.perf_counter()
     if len(parsed) > 1:
         overall_metrics = {
             "username": username,
@@ -224,6 +237,8 @@ def gerrit_developer(
             "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in all_owner_changes if c.get("number") is not None],
             "metrics": overall_metrics,
         })
+    logger.info("[PERF] calculating kpis [Overal Period]:%.3fs", time.perf_counter() - t)
+    logger.info("[PERF] Total time elapsed: %.3fs", time.perf_counter() - total)
 
     return {"periods": results}
 
@@ -538,6 +553,7 @@ def gerrit_team_performance(
     all_reviewer_changes = []
     all_commenter_changes = []
 
+    total = time.perf_counter()
     parsed = parse_periods(periods)
     for start_date, end_date in parsed:
 
@@ -565,7 +581,7 @@ def gerrit_team_performance(
             })
 
             continue
-
+        t = time.perf_counter()
         owner_changes = load_changes(
             username=members,
             project=project,
@@ -575,6 +591,8 @@ def gerrit_team_performance(
             end_date=end_date,
             live=live,
         )
+        logger.info("[PERF] fetching owners changes [%s -> %s]: %.3fs",start_date, end_date, time.perf_counter() - t)
+
         all_owner_changes.extend(owner_changes)
 
         developers = sorted(members)
@@ -597,6 +615,7 @@ def gerrit_team_performance(
                 change for change in owner_changes
                 if (change.get("owner") or {}).get("username") == developer
             ]
+            t = time.perf_counter()
             developer_reviewer_changes = load_changes(
                 reviewer=developer,
                 project=project,
@@ -617,6 +636,8 @@ def gerrit_team_performance(
                 live=live,
             )
             all_commenter_changes.extend(developer_commenter_changes)
+            logger.info("[PERF] fetching review and comment changes for %s [%s -> %s]: %.3fs",developer,start_date, end_date, time.perf_counter() - t)
+            t = time.perf_counter()
 
             developer_metrics[developer] = developer_snapshot_metrics(
                 developer,
@@ -624,7 +645,8 @@ def gerrit_team_performance(
                 reviewer_changes=developer_reviewer_changes,
                 commenter_changes=developer_commenter_changes,
             )
-
+            logger.info("[PERF] calculating kpis for %s [%s -> %s]: %.3fs",developer,start_date, end_date, time.perf_counter() - t)
+        
         metrics = {
             "team": serialize_team(team),
             "filters": {
@@ -644,8 +666,9 @@ def gerrit_team_performance(
             "change_numbers": [{"change_number": c.get("number"), "title": c.get("subject")} for c in owner_changes if c.get("number") is not None],
             "metrics": metrics,
         })
-
+    
     if len(parsed) > 1:
+        t = time.perf_counter()
         if not members:
             overall_metrics = {
                 "team": serialize_team(team),
@@ -727,5 +750,6 @@ def gerrit_team_performance(
                 "developer_metrics": overall_metrics["developer_metrics"],
             },
         })
-
+        logger.info("[PERF] calculating kpis [Overal Period]:%.3fs", time.perf_counter() - t)
+    logger.info("[PERF] Total time elapsed: %.3fs", time.perf_counter() - total)
     return {"periods": results}
